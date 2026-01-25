@@ -1,4 +1,4 @@
-# heart_guard
+# ecg_analyzer_app
 
 A new Flutter project.
 
