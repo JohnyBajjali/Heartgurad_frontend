@@ -99,17 +99,15 @@ class EcgUploadService {
 
   /// Upload SIGNAL file (XML/aECG) to backend (for analyzer model)
   ///
-  /// ✅ Your Django backend already supports BOTH formats using:
-  ///    POST /api/ecg/predict/
-  /// It detects format automatically (Philips XML vs HL7 aECG).
+  /// IMPORTANT: set this endpoint to the one you really use in Django for signals.
+  /// You currently have: /api/ecg/predict_philips_xml/
   static Future<http.StreamedResponse> uploadSignal({
     required Uint8List fileBytes,
     required String fileName,
     required String patientName,
     required String patientId,
   }) async {
-    // ✅ unified endpoint in your backend: HeartGuardBE/views.py -> predict_ecg
-    final uri = Uri.parse('${backendBaseUrl()}/api/ecg/predict/');
+    final uri = Uri.parse('${backendBaseUrl()}/api/ecg/predict_philips_xml/');
     final request = http.MultipartRequest('POST', uri);
 
     request.files.add(
