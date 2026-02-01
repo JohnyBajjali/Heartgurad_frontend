@@ -190,7 +190,141 @@ class _CaptureUploadScreenState extends State<CaptureUploadScreen> {
     // setState(() => _imageBytes = cropped);
   }
 
-  /* -------------------- UPLOAD -------------------- */
+  /* -------------------- NEW: UPLOAD PICKERS (STEP 1) -------------------- */
+
+  Future<void> _showUploadTypePicker() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              const ListTile(
+                title: Text(
+                  "Upload ECG",
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text("Choose what you want to upload"),
+              ),
+              ListTile(
+                leading: const Icon(Icons.insert_drive_file_outlined),
+                title: const Text("Upload Signal"),
+                subtitle: const Text("XML or aECG file"),
+                onTap: () => Navigator.pop(ctx, "signal"),
+              ),
+              ListTile(
+                leading: const Icon(Icons.image_outlined),
+                title: const Text("Upload Image"),
+                subtitle: const Text("3×4 or 3×4 + 1 image"),
+                onTap: () => Navigator.pop(ctx, "image"),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (choice == "signal") {
+      await _showSignalTypePicker();
+    } else if (choice == "image") {
+      // For image, require that an image already exists (scan/import first)
+      if (_imageBytes == null) {
+        _showSnack('Please scan or import an ECG image first.');
+        return;
+      }
+      await _showImageLayoutPicker();
+    }
+  }
+
+  Future<void> _showSignalTypePicker() async {
+    final type = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              const ListTile(
+                title: Text(
+                  "Upload Signal",
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text("Choose the signal file type"),
+              ),
+              ListTile(
+                leading: const Icon(Icons.description_outlined),
+                title: const Text("XML (Philips)"),
+                onTap: () => Navigator.pop(ctx, "xml"),
+              ),
+              ListTile(
+                leading: const Icon(Icons.description_outlined),
+                title: const Text("aECG (HL7)"),
+                onTap: () => Navigator.pop(ctx, "aecg"),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (type == null) return;
+
+    // Step 2 will implement real file picker + upload
+    debugPrint("Selected signal type: $type");
+    _showSnack('Selected signal type: $type (upload coming next step)');
+  }
+
+  Future<void> _showImageLayoutPicker() async {
+    final layout = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              const ListTile(
+                title: Text(
+                  "Upload Image",
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text("Choose the ECG image layout"),
+              ),
+              ListTile(
+                leading: const Icon(Icons.grid_on_outlined),
+                title: const Text("3×4"),
+                onTap: () => Navigator.pop(ctx, "3x4"),
+              ),
+              ListTile(
+                leading: const Icon(Icons.grid_view_outlined),
+                title: const Text("3×4 + 1"),
+                onTap: () => Navigator.pop(ctx, "3x4_plus_1"),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (layout == null) return;
+
+    debugPrint("Selected image layout: $layout");
+
+    // For now: keep your current upload behavior (image upload only).
+    // Step 3 will change the endpoint to predict_image + send layout param.
+    await _uploadToServer();
+  }
+
+  /* -------------------- UPLOAD (CURRENT IMAGE UPLOAD) -------------------- */
 
   Future<void> _uploadToServer() async {
     if (_imageBytes == null) {
@@ -278,7 +412,7 @@ class _CaptureUploadScreenState extends State<CaptureUploadScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 22),
                 child: Text(
                   'Scan or Import an ECG\nWe’ll crop and prepare it for analysis',
-                  style: theme.textTheme.titleMedium?.copyWith(
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: Colors.white,
                     height: 1.25,
                     fontWeight: FontWeight.w600,
@@ -310,11 +444,11 @@ class _CaptureUploadScreenState extends State<CaptureUploadScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: ActionCard(
-                title: 'Import',
-                subtitle: 'From gallery or files',
+                title: 'Upload',
+                subtitle: 'Signal (XML/aECG) or Image (3×4 / 3×4+1)',
                 icon: Icons.folder_open_rounded,
                 color: const Color(0xFF0E6B6F),
-                onTap: _importFromGallery,
+                onTap: _showUploadTypePicker,
               ),
             ),
           ],
@@ -491,11 +625,13 @@ class _CaptureUploadScreenState extends State<CaptureUploadScreen> {
         label: const Padding(
           padding: EdgeInsets.symmetric(vertical: 14),
           child: Text(
-            'Upload to Server',
+            'Upload',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
         ),
-        onPressed: (!_isUploading && hasImage) ? _uploadToServer : null,
+        // ✅ Now upload always opens picker (Signal/Image). Not disabled when no image,
+        // because Signal upload doesn't need an image.
+        onPressed: _isUploading ? null : _showUploadTypePicker,
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF0E6B6F),
           disabledBackgroundColor: const Color(0xFF9FB9BC),

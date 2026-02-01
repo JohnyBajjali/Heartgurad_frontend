@@ -31,17 +31,7 @@ class PatientService {
       return Patient.fromJson(data);
     }
 
-    String message = 'Login failed.';
-    try {
-      final decoded = jsonDecode(response.body);
-      if (decoded is Map<String, dynamic>) {
-        message = (decoded['error'] ?? decoded['message'] ?? message).toString();
-      } else {
-        message = response.body.toString();
-      }
-    } catch (_) {
-      message = response.body.isNotEmpty ? response.body : message;
-    }
+    final message = _extractMessage(response.body, fallback: 'Login failed.');
 
     if (response.statusCode == 409) {
       throw Exception(message);
@@ -50,7 +40,7 @@ class PatientService {
     throw Exception('Server error (${response.statusCode}): $message');
   }
 
-  /// ✅ NEW: Fetch all patients for dashboard browsing
+  /// Fetch all patients for dashboard browsing
   static Future<List<Map<String, dynamic>>> fetchPatientsRaw() async {
     final uri = Uri.parse('${EcgUploadService.backendBaseUrl()}/api/patients/');
     final response = await http.get(uri);
@@ -67,7 +57,7 @@ class PatientService {
     return list;
   }
 
-  /// ✅ NEW: Create patient (ID unique, gender optional)
+  /// Create patient (ID unique, gender optional)
   static Future<Map<String, dynamic>> createPatient({
     required String patientId,
     required String fullName,
@@ -90,22 +80,50 @@ class PatientService {
       return decoded['patient'] as Map<String, dynamic>;
     }
 
-    String message = 'Create patient failed.';
-    try {
-      final decoded = jsonDecode(response.body);
-      if (decoded is Map<String, dynamic>) {
-        message = (decoded['error'] ?? decoded['message'] ?? message).toString();
-      } else {
-        message = response.body.toString();
-      }
-    } catch (_) {
-      message = response.body.isNotEmpty ? response.body : message;
-    }
+    final message = _extractMessage(response.body, fallback: 'Create patient failed.');
 
     if (response.statusCode == 409) {
       throw Exception(message); // patient_id already exists
     }
 
     throw Exception('Server error (${response.statusCode}): $message');
+  }
+
+  /// ✅ Delete patient
+  static Future<void> deletePatient(String patientId) async {
+    // Pattern 1
+    final uri1 =
+    Uri.parse('${EcgUploadService.backendBaseUrl()}/api/patients/$patientId/');
+    final r1 = await http.delete(uri1);
+
+    if (r1.statusCode == 200 || r1.statusCode == 204) return;
+
+    // Pattern 2
+    final uri2 =
+    Uri.parse('${EcgUploadService.backendBaseUrl()}/api/patients/delete/');
+    final r2 = await http.post(
+      uri2,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'patient_id': patientId}),
+    );
+
+    if (r2.statusCode == 200 || r2.statusCode == 204) return;
+
+    final msg = _extractMessage(r2.body, fallback: 'Delete patient failed.');
+    throw Exception('Server error (${r2.statusCode}): $msg');
+  }
+
+  static String _extractMessage(String body, {required String fallback}) {
+    if (body.trim().isEmpty) return fallback;
+
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        return (decoded['error'] ?? decoded['message'] ?? fallback).toString();
+      }
+      return decoded.toString();
+    } catch (_) {
+      return body;
+    }
   }
 }

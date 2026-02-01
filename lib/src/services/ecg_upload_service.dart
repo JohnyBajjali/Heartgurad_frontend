@@ -10,20 +10,17 @@ class EcgUploadService {
   /// Public so other services can reuse the same base URL.
   static String backendBaseUrl() {
     if (kIsWeb) {
-      // Flutter Web (Chrome) -> same machine -> use localhost
       return 'http://127.0.0.1:8000';
     }
 
     if (Platform.isAndroid) {
-      // Android emulator reaching host machine
       return 'http://10.0.2.2:8000';
     }
 
-    // iOS / desktop etc. on same PC
     return 'http://127.0.0.1:8000';
   }
 
-  static String _inferExtToMime(String name) {
+  static String _inferImageExtToSubtype(String name) {
     final ext = p.extension(name).toLowerCase();
     switch (ext) {
       case '.jpg':
@@ -38,7 +35,15 @@ class EcgUploadService {
     }
   }
 
-  /// MAIN FUNCTION: Upload ECG file to Django backend
+  static MediaType _signalMediaType(String fileName) {
+    final ext = p.extension(fileName).toLowerCase();
+    if (ext == '.xml') return MediaType('application', 'xml');
+
+    // aECG isn't standardized everywhere; safest is octet-stream.
+    return MediaType('application', 'octet-stream');
+  }
+
+  /// Upload ECG IMAGE (JPG/PNG/WEBP) to Django backend
   static Future<http.StreamedResponse> uploadEcg({
     required Uint8List imageBytes,
     required String fileName,
@@ -53,7 +58,7 @@ class EcgUploadService {
         'file',
         imageBytes,
         filename: fileName,
-        contentType: MediaType('image', _inferExtToMime(fileName)),
+        contentType: MediaType('image', _inferImageExtToSubtype(fileName)),
       ),
     );
 
@@ -61,11 +66,10 @@ class EcgUploadService {
     request.fields['patient_name'] = patientName;
     request.fields['patient_id'] = patientId;
 
-    return await request.send();
+    return request.send();
   }
 
-  /// STEP 3: Auto-crop via backend OpenCV
-  /// POST /api/ecg/auto_crop/ with multipart file => returns image/jpeg bytes
+  /// Auto-crop IMAGE via backend OpenCV
   static Future<Uint8List> autoCropEcg({
     required Uint8List imageBytes,
     required String fileName,
@@ -78,7 +82,7 @@ class EcgUploadService {
         'file',
         imageBytes,
         filename: fileName,
-        contentType: MediaType('image', _inferExtToMime(fileName)),
+        contentType: MediaType('image', _inferImageExtToSubtype(fileName)),
       ),
     );
 
@@ -91,5 +95,33 @@ class EcgUploadService {
     }
 
     return Uint8List.fromList(respBytes);
+  }
+
+  /// Upload SIGNAL file (XML/aECG) to backend (for analyzer model)
+  ///
+  /// IMPORTANT: set this endpoint to the one you really use in Django for signals.
+  /// You currently have: /api/ecg/predict_philips_xml/
+  static Future<http.StreamedResponse> uploadSignal({
+    required Uint8List fileBytes,
+    required String fileName,
+    required String patientName,
+    required String patientId,
+  }) async {
+    final uri = Uri.parse('${backendBaseUrl()}/api/ecg/predict_philips_xml/');
+    final request = http.MultipartRequest('POST', uri);
+
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'file',
+        fileBytes,
+        filename: fileName,
+        contentType: _signalMediaType(fileName),
+      ),
+    );
+
+    request.fields['patient_name'] = patientName;
+    request.fields['patient_id'] = patientId;
+
+    return request.send();
   }
 }
