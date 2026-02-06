@@ -13,6 +13,7 @@ class PatientsScreen extends StatefulWidget {
 class _PatientsScreenState extends State<PatientsScreen> {
   final nameCtrl = TextEditingController();
   final idCtrl = TextEditingController();
+  final ageCtrl = TextEditingController();
   Gender? gender;
 
   bool creating = false;
@@ -34,6 +35,7 @@ class _PatientsScreenState extends State<PatientsScreen> {
   void dispose() {
     nameCtrl.dispose();
     idCtrl.dispose();
+    ageCtrl.dispose();
     super.dispose();
   }
 
@@ -79,12 +81,35 @@ class _PatientsScreenState extends State<PatientsScreen> {
     return '';
   }
 
+  int? _parseAge(String s) {
+    final t = s.trim();
+    if (t.isEmpty) return null;
+    return int.tryParse(t);
+  }
+
   Future<void> createPatient() async {
     final name = nameCtrl.text.trim();
     final id = idCtrl.text.trim();
+    final age = _parseAge(ageCtrl.text);
 
     if (name.isEmpty || id.isEmpty) {
       _snack('Enter patient name and ID');
+      return;
+    }
+
+    // ✅ gender is mandatory
+    if (gender == null) {
+      _snack('Please select gender');
+      return;
+    }
+
+    // ✅ age is mandatory
+    if (age == null) {
+      _snack('Enter a valid age');
+      return;
+    }
+    if (age <= 0 || age > 130) {
+      _snack('Age must be between 1 and 130');
       return;
     }
 
@@ -102,11 +127,13 @@ class _PatientsScreenState extends State<PatientsScreen> {
       await PatientService.createPatient(
         patientId: id,
         fullName: name,
-        gender: _toBackendGender(),
+        age: age,
+        gender: _toBackendGender(), // now always M/F (not null)
       );
 
       nameCtrl.clear();
       idCtrl.clear();
+      ageCtrl.clear();
       setState(() => gender = null);
 
       await _loadPatients();
@@ -154,6 +181,9 @@ class _PatientsScreenState extends State<PatientsScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
+    // ✅ Disable Create until gender selected (mandatory)
+    final canCreate = !creating && gender != null;
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -180,7 +210,9 @@ class _PatientsScreenState extends State<PatientsScreen> {
 
           // Create Card
           Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(18),
               child: Column(
@@ -194,9 +226,11 @@ class _PatientsScreenState extends State<PatientsScreen> {
                   ),
                   const SizedBox(height: 12),
 
+                  // Full Name + ID + Age
                   Row(
                     children: [
                       Expanded(
+                        flex: 3,
                         child: TextField(
                           controller: nameCtrl,
                           decoration: InputDecoration(
@@ -209,11 +243,26 @@ class _PatientsScreenState extends State<PatientsScreen> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
+                        flex: 2,
                         child: TextField(
                           controller: idCtrl,
                           keyboardType: TextInputType.number,
                           decoration: InputDecoration(
                             labelText: 'Patient ID (unique)',
+                            border: _rounded(),
+                            enabledBorder: _rounded(),
+                            focusedBorder: _rounded(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 120,
+                        child: TextField(
+                          controller: ageCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: 'Age',
                             border: _rounded(),
                             enabledBorder: _rounded(),
                             focusedBorder: _rounded(),
@@ -240,8 +289,9 @@ class _PatientsScreenState extends State<PatientsScreen> {
                       ChoiceChip(
                         label: const Text('Male'),
                         selected: gender == Gender.male,
-                        onSelected:
-                        creating ? null : (_) => setState(() => gender = Gender.male),
+                        onSelected: creating
+                            ? null
+                            : (_) => setState(() => gender = Gender.male),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(999),
                         ),
@@ -256,13 +306,16 @@ class _PatientsScreenState extends State<PatientsScreen> {
                           borderRadius: BorderRadius.circular(999),
                         ),
                       ),
+
                       FilledButton.icon(
-                        onPressed: creating ? null : createPatient,
+                        // ✅ disabled until gender selected
+                        onPressed: canCreate ? createPatient : null,
                         icon: creating
                             ? const SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child:
+                          CircularProgressIndicator(strokeWidth: 2),
                         )
                             : const Icon(Icons.add),
                         label: Text(creating ? 'Creating...' : 'Create'),
@@ -295,25 +348,36 @@ class _PatientsScreenState extends State<PatientsScreen> {
               ),
             )
                 : patients.isEmpty
-                ? const Center(child: Text('No patients yet. Create one above.'))
+                ? const Center(
+              child: Text('No patients yet. Create one above.'),
+            )
                 : ListView.separated(
               itemCount: patients.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              separatorBuilder: (_, __) =>
+              const Divider(height: 1),
               itemBuilder: (_, i) {
                 final p = patients[i];
-                final name = (p['full_name'] ?? '').toString().trim();
-                final id = (p['patient_id'] ?? '').toString().trim();
+                final name =
+                (p['full_name'] ?? '').toString().trim();
+                final id =
+                (p['patient_id'] ?? '').toString().trim();
                 final g = p['gender']?.toString();
                 final ecgCount = (p['ecg_count'] ?? 0).toString();
+                final age = p['age'];
 
                 final gLabel = _genderLabel(g);
-                final subtitle = [
+
+                final parts = <String>[
                   'ID: $id',
+                  if (age != null && age.toString().isNotEmpty)
+                    'Age: $age',
                   if (gLabel.isNotEmpty) gLabel,
                   'ECGs: $ecgCount',
-                ].join(' • ');
+                ];
 
-                final displayName = name.isEmpty ? '(No name)' : name;
+                final subtitle = parts.join(' • ');
+                final displayName =
+                name.isEmpty ? '(No name)' : name;
 
                 return ListTile(
                   leading: CircleAvatar(
@@ -330,8 +394,10 @@ class _PatientsScreenState extends State<PatientsScreen> {
                   subtitle: Text(subtitle),
                   trailing: IconButton(
                     tooltip: 'Delete',
-                    icon: Icon(Icons.delete_outline, color: cs.error),
-                    onPressed: () => _confirmDelete(id, displayName),
+                    icon: Icon(Icons.delete_outline,
+                        color: cs.error),
+                    onPressed: () =>
+                        _confirmDelete(id, displayName),
                   ),
                   onTap: () {
                     Navigator.of(context).pushNamed(
@@ -340,6 +406,7 @@ class _PatientsScreenState extends State<PatientsScreen> {
                         'patient_id': id,
                         'name': displayName,
                         'gender': g,
+                        'age': age,
                       },
                     );
                   },
