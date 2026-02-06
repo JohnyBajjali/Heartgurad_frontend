@@ -684,8 +684,20 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     required String title,
     required Map<String, dynamic> data,
   }) async {
-    final previewUrl =
-    (data['preview_image_url'] ?? data['previewUrl'] ?? data['preview_url'])?.toString();
+    // 🔧 FIX: build absolute preview URL if backend returns /media/...
+    String? previewUrl =
+    (data['preview_image_url'] ??
+        data['previewUrl'] ??
+        data['preview_url'] ??
+        ((data['meta'] is Map) ? (data['meta']['preview_url']) : null))
+        ?.toString();
+
+    if (previewUrl != null && previewUrl.isNotEmpty && !previewUrl.startsWith('http')) {
+      final base = EcgUploadService.backendBaseUrl();
+      previewUrl = '$base$previewUrl';
+    }
+
+    debugPrint('previewUrl=$previewUrl');
 
     final topkRaw = data['topk'] ?? data['prediction_topk'];
     final List<Map<String, dynamic>> topk = (topkRaw is List)
@@ -702,7 +714,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     final diagScores = _scpReady ? _aggregateDiag5(topk) : null;
     final bestDiag = (diagScores != null) ? _bestDiagScore(diagScores) : null;
 
-    // ✅ Group detailed ProtoECGNet labels under superclasses (above threshold)
+    // ✅ Group detailed ProtoECGNet labels under superclasses
     final grouped = (_scpReady) ? _groupTopkBySuperclass(topk) : null;
 
     await showDialog<void>(
@@ -739,24 +751,26 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                   ),
                 ),
                 const Divider(height: 1),
+
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // 🖼️ ECG DRAWING (this is what was missing)
                         if (previewUrl != null && previewUrl.isNotEmpty) ...[
                           _PreviewBox(url: previewUrl),
                           const SizedBox(height: 16),
                         ],
 
-                        // If CSV not ready, fall back to raw top label card
+                        // Fallback if CSV not loaded
                         if (!_scpReady && topk.isNotEmpty) ...[
                           _TopResultCard(item: topk.first),
                           const SizedBox(height: 16),
                         ],
 
-                        // ✅ Diagnostic top class card
+                        // ✅ Top superclass summary
                         if (_scpReady && bestDiag != null) ...[
                           _TopDiagCard(score: bestDiag),
                           const SizedBox(height: 16),
@@ -767,13 +781,12 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
                         if (!_scpReady)
                           Text(
-                            'CSV mapping not loaded yet. Please ensure scp_statementsRegrouped2.csv is in assets and listed in pubspec.yaml.',
+                            'CSV mapping not loaded yet. Please ensure scp_statementsRegrouped2.csv is in assets.',
                             style: TextStyle(
                               color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.70),
                             ),
                           )
                         else ...[
-                          // Show each of the 5 classes
                           for (final b in _diagBuckets) ...[
                             _DiagRow(
                               title: b.title,
@@ -786,7 +799,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                           const SizedBox(height: 6),
                           Text(
                             'Threshold: ${(100 * _diagThreshold).toStringAsFixed(0)}% '
-                                '(classes below threshold are shown as “none above threshold”, and detailed labels below threshold are hidden).',
+                                '(classes below threshold are shown as “none above threshold”, '
+                                'and detailed labels below threshold are hidden).',
                             style: TextStyle(
                               color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.60),
                               fontSize: 12,
@@ -794,10 +808,11 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                           ),
 
                           const SizedBox(height: 18),
-                          _SectionTitle(title: 'DETAILED LABELS (ProtoECGNet) — grouped by superclass'),
+                          _SectionTitle(
+                            title: 'DETAILED LABELS (ProtoECGNet) — grouped by superclass',
+                          ),
                           const SizedBox(height: 8),
 
-                          // Expandable groups per superclass
                           for (final b in _diagBuckets) ...[
                             _DiagGroupTile(
                               bucket: b,
@@ -1121,8 +1136,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                     child: Text(busy ? 'Uploading...' : 'Upload'),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0E6B6F),
-                    disabledBackgroundColor: const Color(0xFF9FB9BC),
+                    backgroundColor: Colors.green,
+                    disabledBackgroundColor: Colors.lightBlue,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
                 ),
