@@ -43,7 +43,7 @@ class EcgUploadService {
     return MediaType('application', 'octet-stream');
   }
 
-  /// Upload ECG IMAGE (JPG/PNG/WEBP) to Django backend
+  /// Upload ECG IMAGE (JPG/PNG/WEBP) to Django backend (stores it for "Previous ECGs")
   static Future<http.StreamedResponse> uploadEcg({
     required Uint8List imageBytes,
     required String fileName,
@@ -65,6 +65,37 @@ class EcgUploadService {
     request.fields['source'] = 'mobile';
     request.fields['patient_name'] = patientName;
     request.fields['patient_id'] = patientId;
+
+    return request.send();
+  }
+
+  /// ✅ NEW: Predict from IMAGE (3x4 / 3x4+1) using unified endpoint:
+  /// POST /api/ecg/predict/
+  ///
+  /// Your backend detects it's an image and runs image pipeline.
+  /// We also send layout so backend can know 3x4 vs 3x4+1 later.
+  static Future<http.StreamedResponse> predictFromImage({
+    required Uint8List imageBytes,
+    required String fileName,
+    required String patientName,
+    required String patientId,
+    required String layout, // "3x4" or "3x4+1"
+  }) async {
+    final uri = Uri.parse('${backendBaseUrl()}/api/ecg/predict/');
+    final request = http.MultipartRequest('POST', uri);
+
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'file',
+        imageBytes,
+        filename: fileName,
+        contentType: MediaType('image', _inferImageExtToSubtype(fileName)),
+      ),
+    );
+
+    request.fields['patient_name'] = patientName;
+    request.fields['patient_id'] = patientId;
+    request.fields['layout'] = layout;
 
     return request.send();
   }
@@ -99,15 +130,16 @@ class EcgUploadService {
 
   /// Upload SIGNAL file (XML/aECG) to backend (for analyzer model)
   ///
-  /// IMPORTANT: set this endpoint to the one you really use in Django for signals.
-  /// You currently have: /api/ecg/predict_philips_xml/
+  /// ✅ Your Django backend already supports BOTH formats using:
+  ///    POST /api/ecg/predict/
+  /// It detects format automatically (Philips XML vs HL7 aECG).
   static Future<http.StreamedResponse> uploadSignal({
     required Uint8List fileBytes,
     required String fileName,
     required String patientName,
     required String patientId,
   }) async {
-    final uri = Uri.parse('${backendBaseUrl()}/api/ecg/predict_philips_xml/');
+    final uri = Uri.parse('${backendBaseUrl()}/api/ecg/predict/');
     final request = http.MultipartRequest('POST', uri);
 
     request.files.add(

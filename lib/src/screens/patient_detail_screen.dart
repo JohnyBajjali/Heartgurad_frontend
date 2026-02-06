@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:io' show File;
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
@@ -32,6 +35,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   final notesCtrl = TextEditingController();
 
   bool _isUploadingImage = false;
+  bool _isUploadingSignal = false;
 
   @override
   void initState() {
@@ -75,42 +79,70 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     }
   }
 
-  // -------------------- PICK IMAGE (UPLOAD only, no camera) --------------------
+  // -------------------- PICK IMAGE (UPLOAD + PREDICT) --------------------
   Future<void> _pickAndUploadImage({required String layoutType}) async {
-    // layoutType: "3x4" OR "3x4+1" (we keep it for later if you want backend validation)
     final picker = ImagePicker();
 
-    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 95);
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 95,
+    );
     if (picked == null) return;
 
     final Uint8List bytes = await picked.readAsBytes();
     final String fileName = p.basename(picked.path);
 
     if (!mounted) return;
-
     setState(() => _isUploadingImage = true);
 
     try {
-      final streamedResp = await EcgUploadService.uploadEcg(
+      // (1) Upload image to store it under patient ECG list
+      final uploadResp = await EcgUploadService.uploadEcg(
         imageBytes: bytes,
         fileName: fileName,
         patientName: widget.patientName,
         patientId: widget.patientId,
       );
 
-      final body = await streamedResp.stream.bytesToString();
-      final ok = streamedResp.statusCode >= 200 && streamedResp.statusCode < 300;
+      final uploadBody = await uploadResp.stream.bytesToString();
+      final uploadOk = uploadResp.statusCode >= 200 && uploadResp.statusCode < 300;
 
       if (!mounted) return;
 
-      if (ok) {
+      if (!uploadOk) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('✅ Image uploaded ($layoutType)!')),
+          SnackBar(content: Text('❌ Upload failed [${uploadResp.statusCode}]: $uploadBody')),
         );
+        return;
+      }
+
+      // (2) Predict from image to get results (3x4)
+      final predResp = await EcgUploadService.predictFromImage(
+        imageBytes: bytes,
+        fileName: fileName,
+        patientName: widget.patientName,
+        patientId: widget.patientId,
+        layout: layoutType, // "3x4" or "3x4+1"
+      );
+
+      final predBody = await predResp.stream.bytesToString();
+      final predOk = predResp.statusCode >= 200 && predResp.statusCode < 300;
+
+      if (!mounted) return;
+
+      if (predOk) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✅ Image uploaded + predicted ($layoutType)!')),
+        );
+
+        // Show backend response (prediction/result)
+        await _showBackendResponseDialog(title: 'Image Result ($layoutType)', body: predBody);
+
+        // Refresh list
         await _loadEcgs();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('❌ Upload failed [${streamedResp.statusCode}]: $body')),
+          SnackBar(content: Text('❌ Predict failed [${predResp.statusCode}]: $predBody')),
         );
       }
     } catch (e) {
@@ -166,6 +198,152 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     await _pickAndUploadImage(layoutType: choice);
   }
 
+  // -------------------- SIGNAL: PICK + UPLOAD (XML / aECG) --------------------
+  Future<void> _showSignalTypePicker() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              const ListTile(
+                title: Text(
+                  "Upload Signal",
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text("Choose signal type"),
+              ),
+              ListTile(
+                leading: const Icon(Icons.code),
+                title: const Text("XML"),
+                subtitle: const Text("Upload a Philips XML ECG"),
+                onTap: () => Navigator.pop(ctx, "xml"),
+              ),
+              ListTile(
+                leading: const Icon(Icons.insert_drive_file_outlined),
+                title: const Text("aECG"),
+                subtitle: const Text("Upload an aECG file"),
+                onTap: () => Navigator.pop(ctx, "aecg"),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!mounted) return;
+    if (choice == null) return;
+
+    if (choice == "xml") {
+      await _pickAndUploadSignal(allowedExt: const ["xml"]);
+    } else if (choice == "aecg") {
+      await _pickAndUploadSignal(allowedExt: const ["aecg"]);
+    }
+  }
+
+  Future<void> _pickAndUploadSignal({required List<String> allowedExt}) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: allowedExt,
+      withData: kIsWeb,
+    );
+
+    if (result == null || result.files.isEmpty) return;
+
+    final file = result.files.first;
+    final fileName = file.name;
+
+    Uint8List bytes;
+    if (kIsWeb) {
+      if (file.bytes == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read file bytes on web.')),
+        );
+        return;
+      }
+      bytes = file.bytes!;
+    } else {
+      if (file.path == null) return;
+      bytes = await File(file.path!).readAsBytes();
+    }
+
+    if (!mounted) return;
+    setState(() => _isUploadingSignal = true);
+
+    try {
+      final streamedResp = await EcgUploadService.uploadSignal(
+        fileBytes: bytes,
+        fileName: fileName,
+        patientName: widget.patientName,
+        patientId: widget.patientId,
+      );
+
+      final body = await streamedResp.stream.bytesToString();
+      final ok = streamedResp.statusCode >= 200 && streamedResp.statusCode < 300;
+
+      if (!mounted) return;
+
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✅ Signal uploaded ($fileName)')),
+        );
+
+        await _showBackendResponseDialog(title: 'Signal Result', body: body);
+        await _loadEcgs();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Signal upload failed [${streamedResp.statusCode}]: $body')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error uploading signal: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isUploadingSignal = false);
+    }
+  }
+
+  Future<void> _showBackendResponseDialog({required String title, required String body}) async {
+    if (!mounted) return;
+
+    String pretty = body;
+    try {
+      final decoded = jsonDecode(body);
+      const encoder = JsonEncoder.withIndent('  ');
+      pretty = encoder.convert(decoded);
+    } catch (_) {
+      // keep text
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(title),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: SelectableText(pretty),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   // -------------------- FIRST BOTTOM SHEET (Signal vs Image) --------------------
   Future<void> _showUploadTypePicker() async {
     final choice = await showModalBottomSheet<String>(
@@ -207,18 +385,12 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     if (choice == null) return;
 
     if (choice == "image") {
-      // ✅ NO second screen navigation anymore
       await _showImageLayoutPicker();
       return;
     }
 
     if (choice == "signal") {
-      // TODO: implement FilePicker for XML/aECG + call EcgUploadService.uploadSignal(...)
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Signal upload (XML/aECG) will be implemented in the next step.'),
-        ),
-      );
+      await _showSignalTypePicker();
       return;
     }
   }
@@ -246,16 +418,13 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                   _buildIntakeCard(
                     context,
                     onScan: () {
-                      // Keep Scan/Camera as-is (if you want to later)
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Scan/Camera flow is separate.')),
                       );
                     },
-                    onUpload: _isUploadingImage ? null : _showUploadTypePicker,
+                    onUpload: (_isUploadingImage || _isUploadingSignal) ? null : _showUploadTypePicker,
                   ),
-
                   const SizedBox(height: 16),
-
                   Text('Doctor Notes', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
                   TextField(
@@ -267,11 +436,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
-
                   const SizedBox(height: 16),
                   Text('Previous ECGs', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
-
                   if (loading)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 24),
@@ -344,6 +511,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
         required VoidCallback onScan,
         required VoidCallback? onUpload,
       }) {
+    final busy = _isUploadingImage || _isUploadingSignal;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -390,16 +559,16 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: onUpload,
-                  icon: _isUploadingImage
+                  icon: busy
                       ? const SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                       : const Icon(Icons.cloud_upload_rounded),
-                  label: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text('Upload'),
+                  label: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(busy ? 'Uploading...' : 'Upload'),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0E6B6F),

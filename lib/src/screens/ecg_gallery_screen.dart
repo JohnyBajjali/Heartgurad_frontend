@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:url_launcher/url_launcher.dart' as launcher;
 
 class EcgGalleryScreen extends StatefulWidget {
@@ -12,120 +13,23 @@ class _EcgGalleryScreenState extends State<EcgGalleryScreen> {
   final _searchCtrl = TextEditingController();
   String _category = 'All';
 
-  // ✅ Curated 12-lead ECG learning sources (reliable + educational)
-  // You can add more links later easily.
-  final List<_EcgWebItem> _items = const [
-    _EcgWebItem(
-      title: 'Normal Sinus Rhythm',
-      category: 'Normal',
-      source: 'LITFL ECG Library',
-      url: 'https://litfl.com/normal-sinus-rhythm-ecg-library/',
-      tags: ['normal', 'sinus', 'rhythm'],
-    ),
-    _EcgWebItem(
-      title: 'Atrial Fibrillation (AF)',
-      category: 'Arrhythmia',
-      source: 'LITFL ECG Library',
-      url: 'https://litfl.com/atrial-fibrillation-ecg-library/',
-      tags: ['af', 'atrial fibrillation', 'irregular'],
-    ),
-    _EcgWebItem(
-      title: 'Atrial Flutter',
-      category: 'Arrhythmia',
-      source: 'LITFL ECG Library',
-      url: 'https://litfl.com/atrial-flutter-ecg-library/',
-      tags: ['flutter', 'sawtooth'],
-    ),
-    _EcgWebItem(
-      title: 'Ventricular Tachycardia (VT)',
-      category: 'Arrhythmia',
-      source: 'LITFL ECG Library',
-      url: 'https://litfl.com/ventricular-tachycardia-ecg-library/',
-      tags: ['vt', 'wide qrs'],
-    ),
-    _EcgWebItem(
-      title: 'Acute STEMI (ST Elevation MI)',
-      category: 'Ischemia / MI',
-      source: 'LITFL ECG Library',
-      url: 'https://litfl.com/st-elevation-mi-ecg-library/',
-      tags: ['stemi', 'mi', 'st elevation'],
-    ),
-    _EcgWebItem(
-      title: 'Inferior STEMI',
-      category: 'Ischemia / MI',
-      source: 'LITFL ECG Library',
-      url: 'https://litfl.com/inferior-stemi-ecg-library/',
-      tags: ['inferior', 'stemi', 'ii iii avf'],
-    ),
-    _EcgWebItem(
-      title: 'Anterior STEMI',
-      category: 'Ischemia / MI',
-      source: 'LITFL ECG Library',
-      url: 'https://litfl.com/anterior-stemi-ecg-library/',
-      tags: ['anterior', 'stemi', 'v1-v4'],
-    ),
-    _EcgWebItem(
-      title: 'Left Bundle Branch Block (LBBB)',
-      category: 'Conduction',
-      source: 'LITFL ECG Library',
-      url: 'https://litfl.com/left-bundle-branch-block-lbbb-ecg-library/',
-      tags: ['lbbb', 'conduction'],
-    ),
-    _EcgWebItem(
-      title: 'Right Bundle Branch Block (RBBB)',
-      category: 'Conduction',
-      source: 'LITFL ECG Library',
-      url: 'https://litfl.com/right-bundle-branch-block-rbbb-ecg-library/',
-      tags: ['rbbb', 'rsr'],
-    ),
-    _EcgWebItem(
-      title: 'Left Ventricular Hypertrophy (LVH)',
-      category: 'Hypertrophy',
-      source: 'LITFL ECG Library',
-      url: 'https://litfl.com/left-ventricular-hypertrophy-lvh-ecg-library/',
-      tags: ['lvh', 'voltage'],
-    ),
-    _EcgWebItem(
-      title: 'Hyperkalemia',
-      category: 'Electrolytes',
-      source: 'LITFL ECG Library',
-      url: 'https://litfl.com/hyperkalaemia-ecg-library/',
-      tags: ['hyperkalemia', 't waves'],
-    ),
-    _EcgWebItem(
-      title: 'Pericarditis',
-      category: 'Other',
-      source: 'LITFL ECG Library',
-      url: 'https://litfl.com/pericarditis-ecg-library/',
-      tags: ['pericarditis', 'diffuse st elevation'],
-    ),
-  ];
+  bool _loading = true;
+  String? _error;
 
-  List<String> get _categories {
-    final s = <String>{'All'};
-    for (final i in _items) {
-      s.add(i.category);
-    }
-    return s.toList()..sort((a, b) => a == 'All' ? -1 : a.compareTo(b));
-  }
+  List<_EcgDiseaseItem> _items = const [];
 
-  List<_EcgWebItem> get _filtered {
-    final q = _searchCtrl.text.trim().toLowerCase();
-    return _items.where((it) {
-      final matchCategory = _category == 'All' || it.category == _category;
-      if (!matchCategory) return false;
+  static const _classLabel = <String, String>{
+    'MI': 'Ischemia / MI',
+    'STTC': 'ST-T Changes',
+    'CD': 'Conduction',
+    'HYP': 'Hypertrophy',
+    'NORM': 'Normal',
+  };
 
-      if (q.isEmpty) return true;
-
-      final hay = [
-        it.title,
-        it.category,
-        it.source,
-        ...it.tags,
-      ].join(' ').toLowerCase();
-
-      return hay.contains(q);
-    }).toList();
+  @override
+  void initState() {
+    super.initState();
+    _loadCsv();
   }
 
   @override
@@ -134,245 +38,446 @@ class _EcgGalleryScreenState extends State<EcgGalleryScreen> {
     super.dispose();
   }
 
-  Future<void> _open(String url) async {
-    final uri = Uri.parse(url);
+  Future<void> _loadCsv() async {
+    try {
+      final csv = await rootBundle.loadString('assets/data/scp_statementsRegrouped2.csv');
+      final rows = _parseCsvToMaps(csv);
 
-    if (await launcher.canLaunchUrl(uri)) {
-      await launcher.launchUrl(uri);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open link')),
-        );
-      }
+      // Debug
+      debugPrint('CSV rows parsed = ${rows.length}');
+
+      final items = rows.map(_EcgDiseaseItem.fromCsv).toList()
+        ..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+
+      setState(() {
+        _items = items;
+        _loading = false;
+        _error = null;
+      });
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        _error = 'Failed to load ECG CSV: $e';
+      });
     }
   }
 
-  IconData _iconForCategory(String c) {
-    switch (c) {
-      case 'Normal':
-        return Icons.favorite_outline;
-      case 'Arrhythmia':
-        return Icons.graphic_eq;
-      case 'Ischemia / MI':
-        return Icons.warning_amber_rounded;
-      case 'Conduction':
-        return Icons.route;
-      case 'Hypertrophy':
-        return Icons.fitness_center;
-      case 'Electrolytes':
-        return Icons.science_outlined;
-      default:
-        return Icons.description_outlined;
+  /// CSV parser with quote support + BOM/header cleanup.
+  /// Also fixes first empty header -> "code" automatically.
+  static List<Map<String, String>> _parseCsvToMaps(String input) {
+    final rows = <List<String>>[];
+    final row = <String>[];
+    final cell = StringBuffer();
+    bool inQuotes = false;
+
+    void endCell() {
+      row.add(cell.toString());
+      cell.clear();
     }
+
+    void endRow() {
+      endCell();
+      rows.add(List<String>.from(row));
+      row.clear();
+    }
+
+    for (var i = 0; i < input.length; i++) {
+      final ch = input[i];
+
+      if (inQuotes) {
+        if (ch == '"') {
+          final nextIsQuote = (i + 1 < input.length) && input[i + 1] == '"';
+          if (nextIsQuote) {
+            cell.write('"');
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          cell.write(ch);
+        }
+        continue;
+      }
+
+      if (ch == '"') {
+        inQuotes = true;
+        continue;
+      }
+
+      if (ch == ',') {
+        endCell();
+        continue;
+      }
+
+      if (ch == '\n') {
+        endRow();
+        continue;
+      }
+
+      if (ch == '\r') continue;
+
+      cell.write(ch);
+    }
+
+    if (cell.isNotEmpty || row.isNotEmpty) endRow();
+    if (rows.isEmpty) return const [];
+
+    // Clean headers: remove BOM and fix first empty header -> "code"
+    final headers = rows.first.map((h) => h.replaceAll('\uFEFF', '').trim()).toList();
+    if (headers.isNotEmpty && headers[0].isEmpty) headers[0] = 'code';
+
+    final out = <Map<String, String>>[];
+    for (final r in rows.skip(1)) {
+      if (r.every((v) => v.trim().isEmpty)) continue;
+      final m = <String, String>{};
+      for (var i = 0; i < headers.length; i++) {
+        final key = headers[i];
+        final val = (i < r.length) ? r[i] : '';
+        m[key] = val;
+      }
+      out.add(m);
+    }
+    return out;
+  }
+
+  List<String> get _categories {
+    final set = <String>{'All'};
+    for (final it in _items) {
+      if (it.classKey.isNotEmpty) set.add(it.classKey);
+    }
+
+    final list = set.toList();
+    list.sort((a, b) {
+      if (a == 'All') return -1;
+      if (b == 'All') return 1;
+      const order = ['MI', 'STTC', 'CD', 'HYP', 'NORM'];
+      final ia = order.indexOf(a);
+      final ib = order.indexOf(b);
+      if (ia != -1 && ib != -1) return ia.compareTo(ib);
+      return a.compareTo(b);
+    });
+
+    return list;
+  }
+
+  List<_EcgDiseaseItem> get _filtered {
+    final q = _searchCtrl.text.trim().toLowerCase();
+    return _items.where((it) {
+      final matchesCategory = _category == 'All' ? true : it.classKey == _category;
+      if (!matchesCategory) return false;
+
+      if (q.isEmpty) return true;
+
+      return it.title.toLowerCase().contains(q) ||
+          it.code.toLowerCase().contains(q) ||
+          it.description.toLowerCase().contains(q) ||
+          it.subclass.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  // -------- SMART SEARCH QUERY (fixes "EL" and similar umbrella statements) --------
+  String _smartSearchQuery(_EcgDiseaseItem item) {
+    String clean(String s) {
+      // remove text in parentheses + extra spaces
+      return s.replaceAll(RegExp(r'\(.*?\)'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    }
+
+    final desc = clean(item.description);
+    final sub = clean(item.subclass);
+    final code = item.code.trim();
+
+    // Special handling for broad STTC statements that often don't exist as a single LITFL page
+    final lower = desc.toLowerCase();
+    if (code == 'EL' || lower.contains('electroly')) {
+      return 'electrolyte ECG OR hyperkalemia ECG OR hypokalemia ECG OR digoxin ECG site:litfl.com';
+    }
+    if (lower.contains('non-specific') && (lower.contains('st') || lower.contains('t'))) {
+      return 'ST depression ECG OR ST elevation ECG OR T wave inversion ECG site:litfl.com';
+    }
+    if (lower.contains('ischemic') && item.classKey == 'STTC') {
+      return 'ischemia ECG ST depression ECG T wave inversion site:litfl.com';
+    }
+
+    // If subclass is meaningful, it sometimes searches better than full description
+    final base = (sub.isNotEmpty && sub.length >= 3) ? sub : desc;
+
+    // Add class hint if available (helps Google)
+    final classHint = _classLabel[item.classKey] ?? item.classKey;
+    final query = '$base ECG $classHint site:litfl.com';
+
+    return query.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  Future<void> _openReference(_EcgDiseaseItem item) async {
+    final raw = item.url.trim();
+
+    // 1) If URL exists, open it
+    if (raw.isNotEmpty) {
+      final u = Uri.tryParse(raw);
+      if (u != null && (u.scheme == 'http' || u.scheme == 'https')) {
+        await launcher.launchUrl(u, mode: launcher.LaunchMode.externalApplication);
+        return;
+      }
+    }
+
+    // 2) Otherwise open smart Google site search automatically
+    final q = Uri.encodeComponent(_smartSearchQuery(item));
+    final google = Uri.parse('https://www.google.com/search?q=$q');
+    await launcher.launchUrl(google, mode: launcher.LaunchMode.externalApplication);
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final list = _filtered;
+    final filtered = _filtered;
 
-    return Padding(
-      padding: const EdgeInsets.all(18),
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '12-Lead ECG Gallery',
+                      style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  if (_loading)
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    Text('${filtered.length} items', style: const TextStyle(color: Colors.black54)),
+                ],
+              ),
+              const SizedBox(height: 14),
+
+              TextField(
+                controller: _searchCtrl,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'Search (e.g., STEMI, AFib, LBBB...)',
+                  prefixIcon: const Icon(Icons.search),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _categories.map((c) {
+                    final selected = _category == c;
+                    final label = c == 'All' ? 'All' : (_classLabel[c] ?? c);
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 10),
+                      child: ChoiceChip(
+                        label: Text(label),
+                        selected: selected,
+                        onSelected: (_) => setState(() => _category = c),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                ),
+
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, c) {
+                    final w = c.maxWidth;
+                    final crossAxisCount = w >= 1100 ? 4 : (w >= 820 ? 3 : (w >= 520 ? 2 : 1));
+
+                    return GridView.builder(
+                      itemCount: filtered.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        crossAxisSpacing: 16,
+                        mainAxisSpacing: 16,
+                        childAspectRatio: 2.0,
+                      ),
+                      itemBuilder: (context, i) {
+                        final item = filtered[i];
+                        final classLabel = item.classKey.isEmpty ? null : (_classLabel[item.classKey] ?? item.classKey);
+
+                        return _EcgCard(
+                          item: item,
+                          classLabel: classLabel,
+                          onOpen: () => _openReference(item),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 8),
+              const Text(
+                'Note: Some SCP statements are broad. If no direct page exists, "Open" will search LITFL automatically.',
+                style: TextStyle(color: Colors.black54),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EcgCard extends StatelessWidget {
+  final _EcgDiseaseItem item;
+  final String? classLabel;
+  final VoidCallback onOpen;
+
+  const _EcgCard({
+    required this.item,
+    required this.onOpen,
+    this.classLabel,
+  });
+
+  IconData get _icon {
+    if (item.classKey == 'MI') return Icons.warning_amber_rounded;
+    if (item.classKey == 'CD') return Icons.multiline_chart_rounded;
+    if (item.classKey == 'HYP') return Icons.favorite_rounded;
+    if (item.classKey == 'STTC') return Icons.show_chart_rounded;
+    return Icons.monitor_heart_rounded;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.black12),
+        boxShadow: const [BoxShadow(blurRadius: 12, color: Color(0x08000000), offset: Offset(0, 6))],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title
           Row(
             children: [
-              Text(
-                '12-Lead ECG Gallery',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: scheme.primary.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(12),
                 ),
+                child: Icon(_icon, color: scheme.primary),
               ),
-              const Spacer(),
-              Text(
-                '${list.length} items',
-                style: TextStyle(
-                  color: cs.onSurface.withValues(alpha: 0.65),
-                  fontWeight: FontWeight.w600,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  item.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 10),
 
-          // Search
-          TextField(
-            controller: _searchCtrl,
-            onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              hintText: 'Search (e.g., STEMI, AFib, LBBB...)',
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // Categories chips
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _categories.map((c) {
-                final selected = _category == c;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: ChoiceChip(
-                    label: Text(c),
-                    selected: selected,
-                    onSelected: (_) => setState(() => _category = c),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // Content
           Expanded(
-            child: list.isEmpty
-                ? Center(
-              child: Text(
-                'No results.\nTry a different search or category.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: cs.onSurface.withValues(alpha: 0.7)),
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  if (classLabel != null) _chip(classLabel!),
+                  if (item.subclass.isNotEmpty) _chip(item.subclass),
+                  _chip(item.diagnostic == true ? 'Diagnostic' : 'Non-diagnostic'),
+                ],
               ),
-            )
-                : GridView.builder(
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 420,
-                mainAxisExtent: 170,
-                crossAxisSpacing: 14,
-                mainAxisSpacing: 14,
-              ),
-              itemCount: list.length,
-              itemBuilder: (context, i) {
-                final it = list[i];
-                return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 42,
-                              height: 42,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(14),
-                                color: cs.primary.withValues(alpha: 0.10),
-                              ),
-                              child: Icon(
-                                _iconForCategory(it.category),
-                                color: cs.primary,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                it.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15.5,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _Badge(text: it.category),
-                            _Badge(text: it.source),
-                          ],
-                        ),
-                        const Spacer(),
-
-                        Row(
-                          children: [
-                            Text(
-                              'Open reference',
-                              style: TextStyle(
-                                color: cs.onSurface.withValues(alpha: 0.7),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const Spacer(),
-                            FilledButton.icon(
-                              onPressed: () => _open(it.url),
-                              icon: const Icon(Icons.open_in_new),
-                              label: const Text('Open'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
             ),
           ),
 
-          const SizedBox(height: 8),
-          Text(
-            'Note: These are web references for learning/comparison. Your uploaded ECGs remain in the Upload workflow.',
-            style: TextStyle(
-              color: cs.onSurface.withValues(alpha: 0.6),
-              fontSize: 12.5,
-            ),
-          ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Reference',
+                  style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w600),
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: onOpen,
+                icon: const Icon(Icons.open_in_new, size: 18),
+                label: const Text('Open'),
+              ),
+            ],
+          )
         ],
       ),
     );
   }
-}
 
-class _Badge extends StatelessWidget {
-  final String text;
-  const _Badge({required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+  static Widget _chip(String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
+        color: const Color(0xFFF3F5F7),
         borderRadius: BorderRadius.circular(999),
-        color: cs.surface,
-        border: Border.all(
-          color: cs.onSurface.withValues(alpha: 0.10),
-        ),
+        border: Border.all(color: Colors.black12),
       ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 12.5,
-          fontWeight: FontWeight.w600,
-          color: cs.onSurface.withValues(alpha: 0.78),
-        ),
-      ),
+      child: Text(text, style: const TextStyle(fontSize: 12, color: Colors.black87)),
     );
   }
 }
 
-class _EcgWebItem {
-  final String title;
-  final String category;
-  final String source;
+class _EcgDiseaseItem {
+  final String code;
+  final String description;
+  final String classKey;
+  final String subclass;
+  final bool? diagnostic;
   final String url;
-  final List<String> tags;
 
-  const _EcgWebItem({
-    required this.title,
-    required this.category,
-    required this.source,
+  const _EcgDiseaseItem({
+    required this.code,
+    required this.description,
+    required this.classKey,
+    required this.subclass,
+    required this.diagnostic,
     required this.url,
-    this.tags = const [],
   });
+
+  String get title => code.isEmpty ? description : '$code — $description';
+
+  static _EcgDiseaseItem fromCsv(Map<String, String> m) {
+    String g(String k) => (m[k] ?? '').trim();
+
+    final diagRaw = g('diagnostic');
+    bool? diagnostic;
+    if (diagRaw.isNotEmpty) {
+      final v = double.tryParse(diagRaw);
+      diagnostic = (v != null) ? v >= 1.0 : (diagRaw.toLowerCase() == 'true');
+    }
+
+    return _EcgDiseaseItem(
+      code: g('code'),
+      description: g('description'),
+      classKey: g('diagnostic_class'),
+      subclass: g('diagnostic_subclass'),
+      diagnostic: diagnostic,
+      url: g('url'),
+    );
+  }
 }
