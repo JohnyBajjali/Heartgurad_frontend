@@ -3,16 +3,23 @@ import 'package:flutter/material.dart';
 import 'app_shell.dart';
 import '../screens/not_found_screen.dart';
 import '../screens/patient_detail_screen.dart';
+import '../theme/app_theme_controller.dart';
 
 class AppRouter {
   static const String shell = '/';
   static const String patient = '/patient';
 
+  static late AppThemeController themeController;
+
+  static void init(AppThemeController controller) {
+    themeController = controller;
+  }
+
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
       case shell:
         return MaterialPageRoute(
-          builder: (_) => const AppShell(),
+          builder: (_) => AppShell(themeController: themeController),
           settings: settings,
         );
 

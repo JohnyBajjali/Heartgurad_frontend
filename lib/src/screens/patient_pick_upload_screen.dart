@@ -203,9 +203,9 @@ class _PatientPickUploadScreenState extends State<PatientPickUploadScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.95),
+                    color: Colors.white.withValues(alpha: 0.95),
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: Colors.black.withOpacity(0.06)),
+                    border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
                   ),
                   child: Row(
                     children: [
@@ -214,7 +214,7 @@ class _PatientPickUploadScreenState extends State<PatientPickUploadScreen> {
                         height: 46,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(14),
-                          color: cs.primary.withOpacity(0.12),
+                          color: cs.primary.withValues(alpha: 0.12),
                         ),
                         child: Icon(Icons.upload_file, color: cs.primary),
                       ),
@@ -257,9 +257,9 @@ class _PatientPickUploadScreenState extends State<PatientPickUploadScreen> {
                 Expanded(
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.95),
+                      color: Colors.white.withValues(alpha: 0.95),
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: Colors.black.withOpacity(0.06)),
+                      border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
                     ),
                     child: _loading
                         ? const Center(child: CircularProgressIndicator())
@@ -281,7 +281,7 @@ class _PatientPickUploadScreenState extends State<PatientPickUploadScreen> {
                         itemCount: _filtered.length,
                         separatorBuilder: (_, __) => Divider(
                           height: 1,
-                          color: Colors.black.withOpacity(0.06),
+                          color: Colors.black.withValues(alpha: 0.06),
                         ),
                         itemBuilder: (context, i) {
                           final p = _filtered[i];
@@ -290,7 +290,7 @@ class _PatientPickUploadScreenState extends State<PatientPickUploadScreen> {
 
                           return ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: cs.primary.withOpacity(0.12),
+                              backgroundColor: cs.primary.withValues(alpha: 0.12),
                               child: Icon(Icons.person, color: cs.primary),
                             ),
                             title: Text(

@@ -17,13 +17,9 @@ class _PatientsScreenState extends State<PatientsScreen> {
   Gender? gender;
 
   bool creating = false;
-
   List<Map<String, dynamic>> patients = [];
   bool loading = true;
   String? loadError;
-
-  OutlineInputBorder _rounded() =>
-      OutlineInputBorder(borderRadius: BorderRadius.circular(14));
 
   @override
   void initState() {
@@ -58,11 +54,13 @@ class _PatientsScreenState extends State<PatientsScreen> {
 
     try {
       final items = await PatientService.fetchPatientsRaw();
+      if (!mounted) return;
       setState(() {
         patients = items;
         loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         loadError = e.toString();
         loading = false;
@@ -96,14 +94,10 @@ class _PatientsScreenState extends State<PatientsScreen> {
       _snack('Enter patient name and ID');
       return;
     }
-
-    // ✅ gender is mandatory
     if (gender == null) {
       _snack('Please select gender');
       return;
     }
-
-    // ✅ age is mandatory
     if (age == null) {
       _snack('Enter a valid age');
       return;
@@ -113,9 +107,7 @@ class _PatientsScreenState extends State<PatientsScreen> {
       return;
     }
 
-    // optional client-side check (backend is the real enforcement)
-    final idExistsLocal =
-    patients.any((p) => (p['patient_id']?.toString() ?? '') == id);
+    final idExistsLocal = patients.any((p) => (p['patient_id']?.toString() ?? '') == id);
     if (idExistsLocal) {
       _snack('Patient ID already exists');
       return;
@@ -128,7 +120,7 @@ class _PatientsScreenState extends State<PatientsScreen> {
         patientId: id,
         fullName: name,
         age: age,
-        gender: _toBackendGender(), // now always M/F (not null)
+        gender: _toBackendGender(),
       );
 
       nameCtrl.clear();
@@ -146,22 +138,20 @@ class _PatientsScreenState extends State<PatientsScreen> {
   }
 
   Future<void> _confirmDelete(String patientId, String patientName) async {
+    final cs = Theme.of(context).colorScheme;
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete patient?'),
+        backgroundColor: Theme.of(ctx).dialogBackgroundColor,
+        title: Text('Delete patient?', style: TextStyle(color: cs.onSurface, fontWeight: FontWeight.w800)),
         content: Text(
           'Delete "$patientName" (ID: $patientId)?\nThis cannot be undone.',
+          style: TextStyle(color: cs.onSurface.withValues(alpha: 0.80)),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
         ],
       ),
     );
@@ -180,8 +170,6 @@ class _PatientsScreenState extends State<PatientsScreen> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-
-    // ✅ Disable Create until gender selected (mandatory)
     final canCreate = !creating && gender != null;
 
     return Padding(
@@ -189,30 +177,23 @@ class _PatientsScreenState extends State<PatientsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Row(
             children: [
               Text(
                 'Patients',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w900,
+                  color: cs.onSurface,
                 ),
               ),
               const Spacer(),
-              IconButton(
-                tooltip: 'Refresh',
-                onPressed: _loadPatients,
-                icon: const Icon(Icons.refresh),
-              ),
+              IconButton(tooltip: 'Refresh', onPressed: _loadPatients, icon: const Icon(Icons.refresh)),
             ],
           ),
           const SizedBox(height: 16),
 
-          // Create Card
           Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
             child: Padding(
               padding: const EdgeInsets.all(18),
               child: Column(
@@ -222,23 +203,17 @@ class _PatientsScreenState extends State<PatientsScreen> {
                     'Create Patient',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w800,
+                      color: cs.onSurface,
                     ),
                   ),
                   const SizedBox(height: 12),
-
-                  // Full Name + ID + Age
                   Row(
                     children: [
                       Expanded(
                         flex: 3,
                         child: TextField(
                           controller: nameCtrl,
-                          decoration: InputDecoration(
-                            labelText: 'Full Name',
-                            border: _rounded(),
-                            enabledBorder: _rounded(),
-                            focusedBorder: _rounded(),
-                          ),
+                          decoration: const InputDecoration(labelText: 'Full Name'),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -247,12 +222,7 @@ class _PatientsScreenState extends State<PatientsScreen> {
                         child: TextField(
                           controller: idCtrl,
                           keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: 'Patient ID (unique)',
-                            border: _rounded(),
-                            enabledBorder: _rounded(),
-                            focusedBorder: _rounded(),
-                          ),
+                          decoration: const InputDecoration(labelText: 'Patient ID (unique)'),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -261,17 +231,11 @@ class _PatientsScreenState extends State<PatientsScreen> {
                         child: TextField(
                           controller: ageCtrl,
                           keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: 'Age',
-                            border: _rounded(),
-                            enabledBorder: _rounded(),
-                            focusedBorder: _rounded(),
-                          ),
+                          decoration: const InputDecoration(labelText: 'Age'),
                         ),
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 12),
 
                   Wrap(
@@ -279,44 +243,24 @@ class _PatientsScreenState extends State<PatientsScreen> {
                     runSpacing: 10,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      Text(
-                        'Gender:',
-                        style: TextStyle(
-                          color: cs.onSurface.withValues(alpha: 0.75),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                      Text('Gender:',
+                          style: TextStyle(color: cs.onSurface.withValues(alpha: 0.75), fontWeight: FontWeight.w700)),
                       ChoiceChip(
                         label: const Text('Male'),
                         selected: gender == Gender.male,
-                        onSelected: creating
-                            ? null
-                            : (_) => setState(() => gender = Gender.male),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(999),
-                        ),
+                        onSelected: creating ? null : (_) => setState(() => gender = Gender.male),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
                       ),
                       ChoiceChip(
                         label: const Text('Female'),
                         selected: gender == Gender.female,
-                        onSelected: creating
-                            ? null
-                            : (_) => setState(() => gender = Gender.female),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(999),
-                        ),
+                        onSelected: creating ? null : (_) => setState(() => gender = Gender.female),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
                       ),
-
                       FilledButton.icon(
-                        // ✅ disabled until gender selected
                         onPressed: canCreate ? createPatient : null,
                         icon: creating
-                            ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child:
-                          CircularProgressIndicator(strokeWidth: 2),
-                        )
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                             : const Icon(Icons.add),
                         label: Text(creating ? 'Creating...' : 'Create'),
                       ),
@@ -332,11 +276,11 @@ class _PatientsScreenState extends State<PatientsScreen> {
             'Existing Patients',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w800,
+              color: cs.onSurface,
             ),
           ),
           const SizedBox(height: 8),
 
-          // List
           Expanded(
             child: loading
                 ? const Center(child: CircularProgressIndicator())
@@ -345,59 +289,55 @@ class _PatientsScreenState extends State<PatientsScreen> {
               child: Text(
                 'Failed to load patients.\n$loadError',
                 textAlign: TextAlign.center,
+                style: TextStyle(color: cs.onSurface),
               ),
             )
                 : patients.isEmpty
-                ? const Center(
-              child: Text('No patients yet. Create one above.'),
+                ? Center(
+              child: Text('No patients yet. Create one above.', style: TextStyle(color: cs.onSurface)),
             )
                 : ListView.separated(
               itemCount: patients.length,
-              separatorBuilder: (_, __) =>
-              const Divider(height: 1),
+              separatorBuilder: (_, __) => Divider(
+                height: 1,
+                color: cs.outlineVariant.withValues(alpha: 0.55),
+              ),
               itemBuilder: (_, i) {
                 final p = patients[i];
-                final name =
-                (p['full_name'] ?? '').toString().trim();
-                final id =
-                (p['patient_id'] ?? '').toString().trim();
+                final name = (p['full_name'] ?? '').toString().trim();
+                final id = (p['patient_id'] ?? '').toString().trim();
                 final g = p['gender']?.toString();
                 final ecgCount = (p['ecg_count'] ?? 0).toString();
                 final age = p['age'];
 
                 final gLabel = _genderLabel(g);
-
                 final parts = <String>[
                   'ID: $id',
-                  if (age != null && age.toString().isNotEmpty)
-                    'Age: $age',
+                  if (age != null && age.toString().isNotEmpty) 'Age: $age',
                   if (gLabel.isNotEmpty) gLabel,
                   'ECGs: $ecgCount',
                 ];
 
-                final subtitle = parts.join(' • ');
-                final displayName =
-                name.isEmpty ? '(No name)' : name;
+                final displayName = name.isEmpty ? '(No name)' : name;
 
                 return ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: cs.primary.withOpacity(0.12),
+                    backgroundColor: cs.primary.withValues(alpha: 0.14),
                     child: Text(
                       displayName[0].toUpperCase(),
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: cs.primary,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.w900, color: cs.primary),
                     ),
                   ),
-                  title: Text(displayName),
-                  subtitle: Text(subtitle),
+                  title: Text(displayName,
+                      style: TextStyle(color: cs.onSurface, fontWeight: FontWeight.w800)),
+                  subtitle: Text(
+                    parts.join(' • '),
+                    style: TextStyle(color: cs.onSurface.withValues(alpha: 0.70)),
+                  ),
                   trailing: IconButton(
                     tooltip: 'Delete',
-                    icon: Icon(Icons.delete_outline,
-                        color: cs.error),
-                    onPressed: () =>
-                        _confirmDelete(id, displayName),
+                    icon: Icon(Icons.delete_outline, color: cs.error),
+                    onPressed: () => _confirmDelete(id, displayName),
                   ),
                   onTap: () {
                     Navigator.of(context).pushNamed(

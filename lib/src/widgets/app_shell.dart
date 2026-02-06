@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme_controller.dart';
 import '../screens/home_landing_screen.dart';
 import '../screens/patients_screen.dart';
 import '../screens/ecg_gallery_screen.dart';
 import '../screens/patient_pick_upload_screen.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  final AppThemeController themeController;
+
+  const AppShell({
+    super.key,
+    required this.themeController,
+  });
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -22,7 +28,8 @@ class _AppShellState extends State<AppShell> {
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: const _TopBar(),
+      appBar: _TopBar(themeController: widget.themeController),
+
       body: Row(
         children: [
           // ✅ Modern rail container
@@ -30,9 +37,12 @@ class _AppShellState extends State<AppShell> {
             width: 104,
             margin: const EdgeInsets.fromLTRB(14, 14, 0, 14),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.70),
+              // ✅ uses theme-friendly surface instead of hard white
+              color: Theme.of(context).cardColor.withValues(alpha: 0.75),
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+              border: Border.all(
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.25),
+              ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.05),
@@ -101,7 +111,9 @@ class _AppShellState extends State<AppShell> {
 }
 
 class _TopBar extends StatelessWidget implements PreferredSizeWidget {
-  const _TopBar();
+  final AppThemeController themeController;
+
+  const _TopBar({required this.themeController});
 
   @override
   Widget build(BuildContext context) {
@@ -115,6 +127,18 @@ class _TopBar extends StatelessWidget implements PreferredSizeWidget {
         'ECG Analyzer',
         style: TextStyle(fontWeight: FontWeight.w900),
       ),
+
+      // ✅ Dark mode toggle button (top-right)
+      actions: [
+        IconButton(
+          tooltip: themeController.isDark ? 'Light Mode' : 'Dark Mode',
+          icon: Icon(themeController.isDark ? Icons.light_mode : Icons.dark_mode),
+          onPressed: () {
+            themeController.setDark(!themeController.isDark);
+          },
+        ),
+        const SizedBox(width: 8),
+      ],
     );
   }
 

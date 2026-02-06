@@ -1,4 +1,4 @@
-﻿,description,prototype_category,diagnostic,form,rhythm,diagnostic_class,diagnostic_subclass,Statement Category,SCP-ECG Statement Description,AHA code,aECG REFID,CDISC Code,DICOM Code,,Prototype Categories
+﻿scp_code,description,prototype_category,diagnostic,form,rhythm,diagnostic_class,...
 NDT,non-diagnostic T abnormalities,3,1,1,,STTC,STTC,other ST-T descriptive statements,non-diagnostic T abnormalities,,,,,,1=rhythm (1D CNN all 10 seconds and show a representative lead; no inter-lead relationships)
 NST_,non-specific ST changes,3,1,1,,STTC,NST_,Basic roots for coding ST-T changes and abnormalities,non-specific ST changes,145,MDC_ECG_RHY_STHILOST,,,,
 DIG,digitalis-effect,4,1,1,,STTC,STTC,other ST-T descriptive statements,suggests digitalis-effect,205,,,,,"3=multi-lead morphology (2D CNN for inter-lead relationships and relatively narrow time window like 0.5-1 second, but all 12 leads)"

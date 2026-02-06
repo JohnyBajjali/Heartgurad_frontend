@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:io' show Platform;
 
@@ -7,20 +8,13 @@ import 'package:http_parser/http_parser.dart';
 import 'package:path/path.dart' as p;
 
 class EcgUploadService {
-  /// Public so other services can reuse the same base URL.
   static String backendBaseUrl() {
-    if (kIsWeb) {
-      return 'http://127.0.0.1:8000';
-    }
-
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8000';
-    }
-
+    if (kIsWeb) return 'http://127.0.0.1:8000';
+    if (Platform.isAndroid) return 'http://10.0.2.2:8000';
     return 'http://127.0.0.1:8000';
   }
 
-  static String _inferImageExtToSubtype(String name) {
+  static String _inferImageSubtype(String name) {
     final ext = p.extension(name).toLowerCase();
     switch (ext) {
       case '.jpg':
@@ -35,89 +29,126 @@ class EcgUploadService {
     }
   }
 
+  static bool _isImage(String fileName) {
+    final ext = p.extension(fileName).toLowerCase();
+    return ext == '.jpg' || ext == '.jpeg' || ext == '.png' || ext == '.webp';
+  }
+
   static MediaType _signalMediaType(String fileName) {
     final ext = p.extension(fileName).toLowerCase();
     if (ext == '.xml') return MediaType('application', 'xml');
-
-    // aECG isn't standardized everywhere; safest is octet-stream.
-    return MediaType('application', 'octet-stream');
+    return MediaType('application', 'octet-stream'); // aECG safest
   }
 
-  /// Upload ECG IMAGE (JPG/PNG/WEBP) to Django backend (stores it for "Previous ECGs")
-  static Future<http.StreamedResponse> uploadEcg({
-    required Uint8List imageBytes,
+  static Future<String> _readStreamedBody(http.StreamedResponse r) async {
+    return await r.stream.bytesToString();
+  }
+
+  /// ------------------------------
+  /// Upload any ECG file (image or signal) and get JSON containing ecg_id
+  /// POST /api/ecg/upload/
+  /// ------------------------------
+  static Future<Map<String, dynamic>> uploadEcgAndGetJson({
+    required Uint8List fileBytes,
     required String fileName,
     required String patientName,
     required String patientId,
   }) async {
     final uri = Uri.parse('${backendBaseUrl()}/api/ecg/upload/');
-    final request = http.MultipartRequest('POST', uri);
+    final req = http.MultipartRequest('POST', uri);
 
-    request.files.add(
+    final isImg = _isImage(fileName);
+    req.files.add(
       http.MultipartFile.fromBytes(
         'file',
-        imageBytes,
+        fileBytes,
         filename: fileName,
-        contentType: MediaType('image', _inferImageExtToSubtype(fileName)),
+        contentType: isImg
+            ? MediaType('image', _inferImageSubtype(fileName))
+            : _signalMediaType(fileName),
       ),
     );
 
-    request.fields['source'] = 'mobile';
-    request.fields['patient_name'] = patientName;
-    request.fields['patient_id'] = patientId;
+    req.fields['source'] = 'mobile';
+    req.fields['patient_name'] = patientName;
+    req.fields['patient_id'] = patientId;
 
-    return request.send();
+    final streamed = await req.send();
+    final body = await _readStreamedBody(streamed);
+
+    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+      throw Exception('Upload failed (${streamed.statusCode}): $body');
+    }
+
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception('Upload returned unexpected JSON: $decoded');
+    }
+    if (!decoded.containsKey('ecg_id')) {
+      throw Exception('Upload JSON missing ecg_id: $decoded');
+    }
+    return decoded;
   }
 
-  /// ✅ NEW: Predict from IMAGE (3x4 / 3x4+1) using unified endpoint:
+  /// ------------------------------
+  /// Predict (image / xml / aecg) AND SAVE in same ECGUpload via ecg_id
   /// POST /api/ecg/predict/
-  ///
-  /// Your backend detects it's an image and runs image pipeline.
-  /// We also send layout so backend can know 3x4 vs 3x4+1 later.
-  static Future<http.StreamedResponse> predictFromImage({
-    required Uint8List imageBytes,
+  /// ------------------------------
+  static Future<http.StreamedResponse> predictUnified({
+    required Uint8List fileBytes,
     required String fileName,
     required String patientName,
     required String patientId,
-    required String layout, // "3x4" or "3x4+1"
+    required int ecgId,
+    String? layout, // for images: "3x4" or "3x4+1"
   }) async {
     final uri = Uri.parse('${backendBaseUrl()}/api/ecg/predict/');
-    final request = http.MultipartRequest('POST', uri);
+    final req = http.MultipartRequest('POST', uri);
 
-    request.files.add(
+    final isImg = _isImage(fileName);
+    req.files.add(
       http.MultipartFile.fromBytes(
         'file',
-        imageBytes,
+        fileBytes,
         filename: fileName,
-        contentType: MediaType('image', _inferImageExtToSubtype(fileName)),
+        contentType: isImg
+            ? MediaType('image', _inferImageSubtype(fileName))
+            : _signalMediaType(fileName),
       ),
     );
 
-    request.fields['patient_name'] = patientName;
-    request.fields['patient_id'] = patientId;
-    request.fields['layout'] = layout;
+    req.fields['patient_name'] = patientName;
+    req.fields['patient_id'] = patientId;
+    req.fields['ecg_id'] = ecgId.toString();
 
-    return request.send();
+    if (layout != null && layout.isNotEmpty) {
+      req.fields['layout'] = layout;
+    }
+
+    return await req.send();
   }
 
-  /// Auto-crop IMAGE via backend OpenCV
+  /// ------------------------------
+  /// Auto crop image
+  /// POST /api/ecg/auto_crop/
+  /// ------------------------------
   static Future<Uint8List> autoCropEcg({
     required Uint8List imageBytes,
     required String fileName,
   }) async {
     final uri = Uri.parse('${backendBaseUrl()}/api/ecg/auto_crop/');
-    final request = http.MultipartRequest('POST', uri);
+    final req = http.MultipartRequest('POST', uri);
 
-    request.files.add(
+    req.files.add(
       http.MultipartFile.fromBytes(
         'file',
         imageBytes,
         filename: fileName,
-        contentType: MediaType('image', _inferImageExtToSubtype(fileName)),
+        contentType: MediaType('image', _inferImageSubtype(fileName)),
       ),
     );
 
-    final streamed = await request.send();
+    final streamed = await req.send();
     final respBytes = await streamed.stream.toBytes();
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
@@ -128,32 +159,36 @@ class EcgUploadService {
     return Uint8List.fromList(respBytes);
   }
 
-  /// Upload SIGNAL file (XML/aECG) to backend (for analyzer model)
-  ///
-  /// ✅ Your Django backend already supports BOTH formats using:
-  ///    POST /api/ecg/predict/
-  /// It detects format automatically (Philips XML vs HL7 aECG).
-  static Future<http.StreamedResponse> uploadSignal({
+  /// ------------------------------
+  /// Convenience: upload + predict (Signal)
+  /// Returns: {"upload": json, "predictResponse": StreamedResponse}
+  /// ------------------------------
+  static Future<Map<String, dynamic>> uploadSignalAndPredict({
     required Uint8List fileBytes,
     required String fileName,
     required String patientName,
     required String patientId,
   }) async {
-    final uri = Uri.parse('${backendBaseUrl()}/api/ecg/predict/');
-    final request = http.MultipartRequest('POST', uri);
-
-    request.files.add(
-      http.MultipartFile.fromBytes(
-        'file',
-        fileBytes,
-        filename: fileName,
-        contentType: _signalMediaType(fileName),
-      ),
+    final uploadJson = await uploadEcgAndGetJson(
+      fileBytes: fileBytes,
+      fileName: fileName,
+      patientName: patientName,
+      patientId: patientId,
     );
 
-    request.fields['patient_name'] = patientName;
-    request.fields['patient_id'] = patientId;
+    final ecgId = (uploadJson['ecg_id'] as num).toInt();
 
-    return request.send();
+    final pred = await predictUnified(
+      fileBytes: fileBytes,
+      fileName: fileName,
+      patientName: patientName,
+      patientId: patientId,
+      ecgId: ecgId,
+    );
+
+    return {
+      "upload": uploadJson,
+      "predictResponse": pred,
+    };
   }
 }

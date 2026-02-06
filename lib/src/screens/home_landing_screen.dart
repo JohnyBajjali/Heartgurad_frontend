@@ -17,7 +17,6 @@ class HomeLandingScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    // ✅ Unify: ECG Upload on Home should open the SAME flow as Patients
     final openPatientsFlow = onOpenPatients ?? onOpenUpload;
 
     return SingleChildScrollView(
@@ -44,7 +43,6 @@ class HomeLandingScreen extends StatelessWidget {
                       subtitle:
                       'Manage patients, upload ECG documents, and explore 12-lead ECG examples.',
                       onOpenPatients: openPatientsFlow,
-                      // ✅ IMPORTANT: Make ECG Upload also go to Patients flow
                       onOpenUpload: openPatientsFlow,
                       onOpenGallery: onOpenGallery,
                     ),
@@ -72,7 +70,6 @@ class HomeLandingScreen extends StatelessWidget {
                               title: 'Scan & Upload',
                               text:
                               'Capture ECG images, crop them, and upload them to your backend in seconds.',
-                              // ✅ IMPORTANT: Unify here too
                               onTap: openPatientsFlow,
                             ),
                             _FeatureCard(
@@ -105,6 +102,17 @@ class HomeLandingScreen extends StatelessWidget {
   }
 }
 
+Color _glassBg(BuildContext context, {double alphaLight = 0.78, double alphaDark = 0.22}) {
+  final cs = Theme.of(context).colorScheme;
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return (isDark ? cs.surface.withValues(alpha: alphaDark) : cs.surface.withValues(alpha: alphaLight));
+}
+
+Color _glassBorder(BuildContext context) {
+  final cs = Theme.of(context).colorScheme;
+  return cs.outlineVariant.withValues(alpha: 0.55);
+}
+
 class _HeroCard extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -130,12 +138,12 @@ class _HeroCard extends StatelessWidget {
         children: [
           Container(
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.72),
+              color: _glassBg(context),
               borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+              border: Border.all(color: _glassBorder(context)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
+                  color: Colors.black.withValues(alpha: 0.10),
                   blurRadius: 22,
                   offset: const Offset(0, 14),
                 ),
@@ -187,12 +195,10 @@ class _HeroCard extends StatelessWidget {
                   height: 56,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(18),
-                    color: Colors.white.withValues(alpha: 0.18),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.35),
-                    ),
+                    color: cs.primary.withValues(alpha: 0.18),
+                    border: Border.all(color: cs.primary.withValues(alpha: 0.25)),
                   ),
-                  child: const Icon(Icons.monitor_heart, color: Colors.white),
+                  child: Icon(Icons.monitor_heart, color: cs.onPrimary),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -206,7 +212,7 @@ class _HeroCard extends StatelessWidget {
                           fontWeight: FontWeight.w900,
                           height: 1.05,
                           letterSpacing: -0.4,
-                          color: cs.onSurface.withValues(alpha: 0.92),
+                          color: cs.onSurface.withValues(alpha: 0.95),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -215,7 +221,7 @@ class _HeroCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 15.5,
                           height: 1.35,
-                          color: cs.onSurface.withValues(alpha: 0.72),
+                          color: cs.onSurface.withValues(alpha: 0.75),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -223,22 +229,9 @@ class _HeroCard extends StatelessWidget {
                         spacing: 10,
                         runSpacing: 10,
                         children: [
-                          _ActionChip(
-                            icon: Icons.people,
-                            text: 'Patients',
-                            onTap: onOpenPatients,
-                          ),
-                          _ActionChip(
-                            icon: Icons.upload_file,
-                            text: 'ECG Upload',
-                            // ✅ Already unified by caller: onOpenUpload = onOpenPatients
-                            onTap: onOpenUpload,
-                          ),
-                          _ActionChip(
-                            icon: Icons.menu_book,
-                            text: '12-Lead Gallery',
-                            onTap: onOpenGallery,
-                          ),
+                          _ActionChip(icon: Icons.people, text: 'Patients', onTap: onOpenPatients),
+                          _ActionChip(icon: Icons.upload_file, text: 'ECG Upload', onTap: onOpenUpload),
+                          _ActionChip(icon: Icons.menu_book, text: '12-Lead Gallery', onTap: onOpenGallery),
                         ],
                       ),
                       const SizedBox(height: 18),
@@ -248,14 +241,12 @@ class _HeroCard extends StatelessWidget {
                           height: 88,
                           width: double.infinity,
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.75),
+                            color: _glassBg(context, alphaLight: 0.80, alphaDark: 0.20),
                             borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: Colors.black.withValues(alpha: 0.06),
-                            ),
+                            border: Border.all(color: _glassBorder(context)),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.04),
+                                color: Colors.black.withValues(alpha: 0.10),
                                 blurRadius: 12,
                                 offset: const Offset(0, 8),
                               ),
@@ -308,13 +299,13 @@ class _ActionChipState extends State<_ActionChip> {
           duration: const Duration(milliseconds: 140),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: _hover ? Colors.white : Colors.white.withValues(alpha: 0.82),
+            color: _hover ? cs.surface : cs.surfaceVariant.withValues(alpha: 0.55),
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+            border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.55)),
             boxShadow: [
               if (_hover)
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
+                  color: Colors.black.withValues(alpha: 0.12),
                   blurRadius: 14,
                   offset: const Offset(0, 8),
                 ),
@@ -325,16 +316,9 @@ class _ActionChipState extends State<_ActionChip> {
             children: [
               Icon(widget.icon, size: 18, color: cs.primary),
               const SizedBox(width: 8),
-              Text(
-                widget.text,
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
+              Text(widget.text, style: TextStyle(fontWeight: FontWeight.w800, color: cs.onSurface)),
               const SizedBox(width: 6),
-              Icon(
-                Icons.chevron_right,
-                size: 18,
-                color: cs.onSurface.withValues(alpha: 0.35),
-              ),
+              Icon(Icons.chevron_right, size: 18, color: cs.onSurface.withValues(alpha: 0.40)),
             ],
           ),
         ),
@@ -381,12 +365,12 @@ class _FeatureCardState extends State<_FeatureCard> {
             duration: const Duration(milliseconds: 160),
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.92),
+              color: _glassBg(context, alphaLight: 0.92, alphaDark: 0.18),
               borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+              border: Border.all(color: _glassBorder(context)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: _hover ? 0.08 : 0.04),
+                  color: Colors.black.withValues(alpha: _hover ? 0.14 : 0.10),
                   blurRadius: _hover ? 22 : 14,
                   offset: Offset(0, _hover ? 12 : 8),
                 ),
@@ -408,9 +392,7 @@ class _FeatureCardState extends State<_FeatureCard> {
                         cs.secondary.withValues(alpha: 0.12),
                       ],
                     ),
-                    border: Border.all(
-                      color: Colors.black.withValues(alpha: 0.05),
-                    ),
+                    border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.50)),
                   ),
                   child: Icon(widget.icon, color: cs.primary),
                 ),
@@ -420,25 +402,16 @@ class _FeatureCardState extends State<_FeatureCard> {
                     Expanded(
                       child: Text(
                         widget.title,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                        ),
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: cs.onSurface),
                       ),
                     ),
-                    Icon(
-                      Icons.chevron_right,
-                      color: cs.onSurface.withValues(alpha: 0.40),
-                    ),
+                    Icon(Icons.chevron_right, color: cs.onSurface.withValues(alpha: 0.40)),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Text(
                   widget.text,
-                  style: TextStyle(
-                    height: 1.35,
-                    color: cs.onSurface.withValues(alpha: 0.75),
-                  ),
+                  style: TextStyle(height: 1.35, color: cs.onSurface.withValues(alpha: 0.75)),
                 ),
               ],
             ),
@@ -462,12 +435,12 @@ class _InfoCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
+        color: _glassBg(context, alphaLight: 0.92, alphaDark: 0.18),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+        border: Border.all(color: _glassBorder(context)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withValues(alpha: 0.10),
             blurRadius: 14,
             offset: const Offset(0, 8),
           ),
@@ -476,22 +449,9 @@ class _InfoCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: cs.onSurface,
-            ),
-          ),
+          Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: cs.onSurface)),
           const SizedBox(height: 8),
-          Text(
-            text,
-            style: TextStyle(
-              height: 1.4,
-              color: cs.onSurface.withValues(alpha: 0.75),
-            ),
-          ),
+          Text(text, style: TextStyle(height: 1.4, color: cs.onSurface.withValues(alpha: 0.75))),
         ],
       ),
     );
@@ -525,10 +485,11 @@ class _SoftBackgroundPainter extends CustomPainter {
 class _EcgWavePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
+    // Use a neutral dark-mode friendly color
     final gridPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1
-      ..color = Colors.black.withValues(alpha: 0.05);
+      ..color = Colors.white.withValues(alpha: 0.16);
 
     const step = 18.0;
     for (double x = 0; x <= size.width; x += step) {
@@ -539,7 +500,7 @@ class _EcgWavePainter extends CustomPainter {
     }
 
     final wavePaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.62)
+      ..color = Colors.blue.withValues(alpha: 0.90)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.1
       ..strokeCap = StrokeCap.round;

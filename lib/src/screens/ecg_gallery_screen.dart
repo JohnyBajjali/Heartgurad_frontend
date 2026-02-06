@@ -43,7 +43,6 @@ class _EcgGalleryScreenState extends State<EcgGalleryScreen> {
       final csv = await rootBundle.loadString('assets/data/scp_statementsRegrouped2.csv');
       final rows = _parseCsvToMaps(csv);
 
-      // Debug
       debugPrint('CSV rows parsed = ${rows.length}');
 
       final items = rows.map(_EcgDiseaseItem.fromCsv).toList()
@@ -175,10 +174,9 @@ class _EcgGalleryScreenState extends State<EcgGalleryScreen> {
     }).toList();
   }
 
-  // -------- SMART SEARCH QUERY (fixes "EL" and similar umbrella statements) --------
+  // -------- SMART SEARCH QUERY --------
   String _smartSearchQuery(_EcgDiseaseItem item) {
     String clean(String s) {
-      // remove text in parentheses + extra spaces
       return s.replaceAll(RegExp(r'\(.*?\)'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
     }
 
@@ -186,7 +184,6 @@ class _EcgGalleryScreenState extends State<EcgGalleryScreen> {
     final sub = clean(item.subclass);
     final code = item.code.trim();
 
-    // Special handling for broad STTC statements that often don't exist as a single LITFL page
     final lower = desc.toLowerCase();
     if (code == 'EL' || lower.contains('electroly')) {
       return 'electrolyte ECG OR hyperkalemia ECG OR hypokalemia ECG OR digoxin ECG site:litfl.com';
@@ -198,10 +195,7 @@ class _EcgGalleryScreenState extends State<EcgGalleryScreen> {
       return 'ischemia ECG ST depression ECG T wave inversion site:litfl.com';
     }
 
-    // If subclass is meaningful, it sometimes searches better than full description
     final base = (sub.isNotEmpty && sub.length >= 3) ? sub : desc;
-
-    // Add class hint if available (helps Google)
     final classHint = _classLabel[item.classKey] ?? item.classKey;
     final query = '$base ECG $classHint site:litfl.com';
 
@@ -211,7 +205,6 @@ class _EcgGalleryScreenState extends State<EcgGalleryScreen> {
   Future<void> _openReference(_EcgDiseaseItem item) async {
     final raw = item.url.trim();
 
-    // 1) If URL exists, open it
     if (raw.isNotEmpty) {
       final u = Uri.tryParse(raw);
       if (u != null && (u.scheme == 'http' || u.scheme == 'https')) {
@@ -220,7 +213,6 @@ class _EcgGalleryScreenState extends State<EcgGalleryScreen> {
       }
     }
 
-    // 2) Otherwise open smart Google site search automatically
     final q = Uri.encodeComponent(_smartSearchQuery(item));
     final google = Uri.parse('https://www.google.com/search?q=$q');
     await launcher.launchUrl(google, mode: launcher.LaunchMode.externalApplication);
@@ -228,6 +220,7 @@ class _EcgGalleryScreenState extends State<EcgGalleryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final filtered = _filtered;
 
     return Scaffold(
@@ -239,10 +232,14 @@ class _EcgGalleryScreenState extends State<EcgGalleryScreen> {
             children: [
               Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       '12-Lead ECG Gallery',
-                      style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w700,
+                        color: cs.onSurface,
+                      ),
                     ),
                   ),
                   if (_loading)
@@ -252,7 +249,10 @@ class _EcgGalleryScreenState extends State<EcgGalleryScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   else
-                    Text('${filtered.length} items', style: const TextStyle(color: Colors.black54)),
+                    Text(
+                      '${filtered.length} items',
+                      style: TextStyle(color: cs.onSurface.withValues(alpha: 0.60)),
+                    ),
                 ],
               ),
               const SizedBox(height: 14),
@@ -291,7 +291,7 @@ class _EcgGalleryScreenState extends State<EcgGalleryScreen> {
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                  child: Text(_error!, style: TextStyle(color: cs.error)),
                 ),
 
               Expanded(
@@ -310,7 +310,8 @@ class _EcgGalleryScreenState extends State<EcgGalleryScreen> {
                       ),
                       itemBuilder: (context, i) {
                         final item = filtered[i];
-                        final classLabel = item.classKey.isEmpty ? null : (_classLabel[item.classKey] ?? item.classKey);
+                        final classLabel =
+                        item.classKey.isEmpty ? null : (_classLabel[item.classKey] ?? item.classKey);
 
                         return _EcgCard(
                           item: item,
@@ -324,9 +325,9 @@ class _EcgGalleryScreenState extends State<EcgGalleryScreen> {
               ),
 
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Note: Some SCP statements are broad. If no direct page exists, "Open" will search LITFL automatically.',
-                style: TextStyle(color: Colors.black54),
+                style: TextStyle(color: cs.onSurface.withValues(alpha: 0.60)),
               ),
             ],
           ),
@@ -357,15 +358,22 @@ class _EcgCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        // ✅ theme-based card color
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.black12),
-        boxShadow: const [BoxShadow(blurRadius: 12, color: Color(0x08000000), offset: Offset(0, 6))],
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.55)),
+        boxShadow: [
+          BoxShadow(
+            blurRadius: 12,
+            color: Colors.black.withValues(alpha: 0.10),
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -376,10 +384,10 @@ class _EcgCard extends StatelessWidget {
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: scheme.primary.withOpacity(0.08),
+                  color: cs.primary.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(_icon, color: scheme.primary),
+                child: Icon(_icon, color: cs.primary),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -387,7 +395,11 @@ class _EcgCard extends StatelessWidget {
                   item.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: cs.onSurface,
+                  ),
                 ),
               ),
             ],
@@ -401,9 +413,9 @@ class _EcgCard extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 6,
                 children: [
-                  if (classLabel != null) _chip(classLabel!),
-                  if (item.subclass.isNotEmpty) _chip(item.subclass),
-                  _chip(item.diagnostic == true ? 'Diagnostic' : 'Non-diagnostic'),
+                  if (classLabel != null) _chip(context, classLabel!),
+                  if (item.subclass.isNotEmpty) _chip(context, item.subclass),
+                  _chip(context, item.diagnostic == true ? 'Diagnostic' : 'Non-diagnostic'),
                 ],
               ),
             ),
@@ -414,7 +426,7 @@ class _EcgCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   'Reference',
-                  style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w600),
+                  style: TextStyle(color: cs.primary, fontWeight: FontWeight.w600),
                 ),
               ),
               FilledButton.icon(
@@ -429,15 +441,24 @@ class _EcgCard extends StatelessWidget {
     );
   }
 
-  static Widget _chip(String text) {
+  static Widget _chip(BuildContext context, String text) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F5F7),
+        // ✅ theme-based chip surface
+        color: cs.surfaceVariant.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black12),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.55)),
       ),
-      child: Text(text, style: const TextStyle(fontSize: 12, color: Colors.black87)),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          color: cs.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 }
