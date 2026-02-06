@@ -684,7 +684,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     required String title,
     required Map<String, dynamic> data,
   }) async {
-    // 🔧 FIX: build absolute preview URL if backend returns /media/...
+    // ----------------------------
+    // ✅ Read URLs (preview / original / digitized)
+    // ----------------------------
     String? previewUrl =
     (data['preview_image_url'] ??
         data['previewUrl'] ??
@@ -692,13 +694,40 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
         ((data['meta'] is Map) ? (data['meta']['preview_url']) : null))
         ?.toString();
 
+    String? originalUrl =
+    (data['original_image_url'] ??
+        data['originalUrl'] ??
+        data['original_url'] ??
+        ((data['meta'] is Map) ? (data['meta']['original_url']) : null))
+        ?.toString();
+
+    String? digitizedUrl =
+    (data['digitized_image_url'] ??
+        data['digitizedUrl'] ??
+        data['digitized_url'] ??
+        ((data['meta'] is Map) ? (data['meta']['digitized_url']) : null))
+        ?.toString();
+
+    // If backend returns /media/... make them absolute
+    final base = EcgUploadService.backendBaseUrl();
+
     if (previewUrl != null && previewUrl.isNotEmpty && !previewUrl.startsWith('http')) {
-      final base = EcgUploadService.backendBaseUrl();
       previewUrl = '$base$previewUrl';
+    }
+    if (originalUrl != null && originalUrl.isNotEmpty && !originalUrl.startsWith('http')) {
+      originalUrl = '$base$originalUrl';
+    }
+    if (digitizedUrl != null && digitizedUrl.isNotEmpty && !digitizedUrl.startsWith('http')) {
+      digitizedUrl = '$base$digitizedUrl';
     }
 
     debugPrint('previewUrl=$previewUrl');
+    debugPrint('originalUrl=$originalUrl');
+    debugPrint('digitizedUrl=$digitizedUrl');
 
+    // ----------------------------
+    // ✅ Parse & sort topk
+    // ----------------------------
     final topkRaw = data['topk'] ?? data['prediction_topk'];
     final List<Map<String, dynamic>> topk = (topkRaw is List)
         ? topkRaw.map((e) => (e as Map).cast<String, dynamic>()).toList()
@@ -717,6 +746,9 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     // ✅ Group detailed ProtoECGNet labels under superclasses
     final grouped = (_scpReady) ? _groupTopkBySuperclass(topk) : null;
 
+    // ----------------------------
+    // ✅ Show dialog
+    // ----------------------------
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -758,8 +790,26 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 🖼️ ECG DRAWING (this is what was missing)
+                        // ✅ 1) ORIGINAL UPLOADED IMAGE
+                        if (originalUrl != null && originalUrl.isNotEmpty) ...[
+                          const _SectionTitle(title: 'ORIGINAL UPLOADED IMAGE'),
+                          const SizedBox(height: 8),
+                          _PreviewBox(url: originalUrl),
+                          const SizedBox(height: 16),
+                        ],
+
+                        // ✅ 2) DIGITIZED-LIKE-ORIGINAL IMAGE
+                        if (digitizedUrl != null && digitizedUrl.isNotEmpty) ...[
+                          const _SectionTitle(title: 'DIGITIZED (LIKE ORIGINAL) — 3×4'),
+                          const SizedBox(height: 8),
+                          _PreviewBox(url: digitizedUrl),
+                          const SizedBox(height: 16),
+                        ],
+
+                        // ✅ 3) PREVIEW/CROPPED USED FOR MODEL (optional)
                         if (previewUrl != null && previewUrl.isNotEmpty) ...[
+                          const _SectionTitle(title: 'PREVIEW / CROPPED USED FOR MODEL'),
+                          const SizedBox(height: 8),
                           _PreviewBox(url: previewUrl),
                           const SizedBox(height: 16),
                         ],
@@ -808,7 +858,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                           ),
 
                           const SizedBox(height: 18),
-                          _SectionTitle(
+                          const _SectionTitle(
                             title: 'DETAILED LABELS (ProtoECGNet) — grouped by superclass',
                           ),
                           const SizedBox(height: 8),
