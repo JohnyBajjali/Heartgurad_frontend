@@ -9,9 +9,19 @@ import 'package:path/path.dart' as p;
 
 class EcgUploadService {
   static String backendBaseUrl() {
-    if (kIsWeb) return 'http://127.0.0.1:8000';
+    if (kIsWeb) {
+      // Uses the same host where the web app is opened.
+      // Example: if you open http://192.168.1.214:8080 on iPhone,
+      // then host becomes 192.168.1.214 and backend will be http://192.168.1.214:8000
+      final host = Uri.base.host;
+      return 'http://$host:8000';
+    }
+
+    // Android emulator only
     if (Platform.isAndroid) return 'http://10.0.2.2:8000';
-    return 'http://127.0.0.1:8000';
+
+    // iOS app / Windows desktop / others on same Wi-Fi
+    return 'http://192.168.1.214:8000';
   }
 
   static String _inferImageSubtype(String name) {

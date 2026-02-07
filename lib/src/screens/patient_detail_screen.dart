@@ -12,6 +12,8 @@ import 'package:http/http.dart' as http;
 
 import '../services/ecg_upload_service.dart';
 import '../services/doctor_notes_service.dart';
+import '../screens/manual_crop_screen.dart'; // adjust path if different
+
 
 class PatientDetailScreen extends StatefulWidget {
   final String patientId;
@@ -361,6 +363,15 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     }
   }
 
+  Future<Uint8List?> _openManualCrop(Uint8List bytes) async {
+    final cropped = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute(
+        builder: (_) => ManualCropScreen(imageBytes: bytes),
+      ),
+    );
+    return cropped; // null if user cancelled
+  }
+
   // ----------------------------
   // ECG list
   // ----------------------------
@@ -396,22 +407,131 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     }
   }
 
+  Future<void> _deleteEcg(Map<String, dynamic> e) async {
+    final id = e['id'];
+    if (id == null) return;
+
+    final created = _fmtDate((e['uploaded_at'] ?? '').toString());
+    final titleLabel = created.isEmpty ? 'ECG' : 'ECG • $created';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete ECG?'),
+        content: Text('Delete $titleLabel from this patient history?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    try {
+      final base = EcgUploadService.backendBaseUrl();
+      final uri = Uri.parse('$base/api/ecg/delete/');
+
+      final res = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'patient_id': int.parse(widget.patientId),
+          'ecg_id': int.parse(id.toString()),
+        }),
+      );
+
+      if (res.statusCode != 200) {
+        throw Exception('Delete failed (${res.statusCode}): ${res.body}');
+      }
+
+      await _loadEcgs();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ ECG deleted')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Delete failed: $e')),
+      );
+    }
+  }
+
+  Future<void> _openEcg(Map<String, dynamic> e) async {
+    final created = _fmtDate((e['uploaded_at'] ?? '').toString());
+    final titleLabel = created.isEmpty ? 'ECG' : 'ECG • $created';
+
+    final fileUrl = e['url']?.toString() ?? '';
+
+    if (e['prediction_topk'] is List) {
+      final data = <String, dynamic>{
+        "topk": e['prediction_topk'],
+        "preview_image_url": e['preview_image_url'],
+        "original_image_url": e['url'],
+        "source_type": e['source_type'],
+      };
+      await _showPredictionDialogFromJson(title: '$titleLabel Result', data: data);
+      return;
+    }
+
+    if (fileUrl.isEmpty) return;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(titleLabel),
+        content: SelectableText(fileUrl),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ----------------------------
   // Upload IMAGE: upload -> predict (with ecg_id)
   // ----------------------------
   Future<void> _pickAndUploadImage({required String layoutType}) async {
     final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 95);
+
+    // 1) Pick from gallery
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 95,
+    );
     if (picked == null) return;
 
-    final bytes = await picked.readAsBytes();
-    final fileName = p.basename(picked.path);
+    // 2) Read original bytes
+    final originalBytes = await picked.readAsBytes();
+
+    // 3) Manual crop (same UI used for camera)
+    if (!mounted) return;
+    final Uint8List? croppedBytes = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute(
+        builder: (_) => ManualCropScreen(imageBytes: originalBytes),
+      ),
+    );
+
+    // If user cancelled crop
+    if (croppedBytes == null) return;
+
+    // Use cropped bytes for upload + predict
+    final bytes = croppedBytes;
+
+    // Safe filename (on web picked.path can be weird/empty)
+    final fileName = (picked.name.isNotEmpty)
+        ? picked.name
+        : 'upload_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
     if (!mounted) return;
     setState(() => _isUploadingImage = true);
 
     try {
-      // 1) upload (store in history)
+      // 4) Upload (store in history)
       final uploadJson = await EcgUploadService.uploadEcgAndGetJson(
         fileBytes: bytes,
         fileName: fileName,
@@ -420,7 +540,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       );
       final ecgId = (uploadJson['ecg_id'] as num).toInt();
 
-      // 2) predict and save in same row
+      // 5) Predict and save in same row
       final predResp = await EcgUploadService.predictUnified(
         fileBytes: bytes,
         fileName: fileName,
@@ -437,9 +557,12 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
       if (ok) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('✅ Image uploaded + predicted ($layoutType)!')),
+          SnackBar(content: Text('✅ Cropped + uploaded + predicted ($layoutType)!')),
         );
-        await _showBackendResponseDialog(title: 'Image Result ($layoutType)', body: predBody);
+        await _showBackendResponseDialog(
+          title: 'Image Result ($layoutType)',
+          body: predBody,
+        );
         await _loadEcgs();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -491,6 +614,124 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     if (choice == null) return;
 
     await _pickAndUploadImage(layoutType: choice);
+  }
+
+  Future<void> _captureAndUploadImage({required String layoutType}) async {
+    final picker = ImagePicker();
+
+    // 1) Capture image from camera
+    final picked = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 95,
+    );
+    if (picked == null) return;
+
+    // 2) Read bytes (original captured)
+    final originalBytes = await picked.readAsBytes();
+
+    // 3) Manual crop screen (returns Uint8List or null if cancelled)
+    if (!mounted) return;
+    final Uint8List? croppedBytes = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute(
+        builder: (_) => ManualCropScreen(imageBytes: originalBytes),
+      ),
+    );
+
+    // If user cancelled crop, stop
+    if (croppedBytes == null) return;
+
+    final fileName = 'camera_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+    if (!mounted) return;
+    setState(() => _isUploadingImage = true);
+
+    try {
+      // 4) Upload cropped image (store in history)
+      final uploadJson = await EcgUploadService.uploadEcgAndGetJson(
+        fileBytes: croppedBytes,
+        fileName: fileName,
+        patientName: widget.patientName,
+        patientId: widget.patientId,
+      );
+
+      final ecgId = (uploadJson['ecg_id'] as num).toInt();
+
+      // 5) Predict using the same cropped image + save result in same row
+      final predResp = await EcgUploadService.predictUnified(
+        fileBytes: croppedBytes,
+        fileName: fileName,
+        patientName: widget.patientName,
+        patientId: widget.patientId,
+        ecgId: ecgId,
+        layout: layoutType,
+      );
+
+      final predBody = await predResp.stream.bytesToString();
+      final ok = predResp.statusCode >= 200 && predResp.statusCode < 300;
+
+      if (!mounted) return;
+
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✅ Cropped + uploaded + predicted ($layoutType)!')),
+        );
+
+        await _showBackendResponseDialog(
+          title: 'Camera Result ($layoutType)',
+          body: predBody,
+        );
+
+        await _loadEcgs();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Predict failed [${predResp.statusCode}]: $predBody')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Camera upload failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isUploadingImage = false);
+    }
+  }
+
+  Future<void> _showCameraLayoutPicker() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            const ListTile(
+              title: Text("Scan / Camera", style: TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: Text("Choose ECG image layout"),
+            ),
+            ListTile(
+              leading: const Icon(Icons.grid_view_rounded),
+              title: const Text("3×4 Image"),
+              subtitle: const Text("Standard 12-lead (3×4)"),
+              onTap: () => Navigator.pop(ctx, "3x4"),
+            ),
+            ListTile(
+              leading: const Icon(Icons.grid_on_rounded),
+              title: const Text("3×4 + 1 Image"),
+              subtitle: const Text("3×4 plus rhythm strip"),
+              onTap: () => Navigator.pop(ctx, "3x4+1"),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    if (choice == null) return;
+
+    await _captureAndUploadImage(layoutType: choice);
   }
 
   // ----------------------------
@@ -885,8 +1126,17 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   }
 
   String _fmtDate(String iso) {
-    if (iso.isEmpty) return '';
-    return iso.replaceFirst('T', ' ').split('.').first;
+    if (iso.trim().isEmpty) return '';
+
+    try {
+      final dt = DateTime.parse(iso).toLocal(); // convert from +00:00 to your local time
+      String two(int n) => n.toString().padLeft(2, '0');
+
+      return '${dt.year}-${two(dt.month)}-${two(dt.day)}  ${two(dt.hour)}:${two(dt.minute)}';
+    } catch (_) {
+      // fallback if parse fails
+      return iso.replaceFirst('T', ' ').split('.').first;
+    }
   }
 
   // ----------------------------
@@ -915,11 +1165,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                 children: [
                   _buildIntakeCard(
                     context,
-                    onScan: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Scan/Camera flow is separate.')),
-                      );
-                    },
+                    onScan: busyUpload ? () {} : _showCameraLayoutPicker,
                     onUpload: busyUpload ? null : _showUploadTypePicker,
                   ),
                   const SizedBox(height: 16),
@@ -942,7 +1188,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                         onPressed: savingNote ? null : _saveNewNote,
                         icon: savingNote
                             ? const SizedBox(
-                            width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                             : const Icon(Icons.save),
                         label: Text(savingNote ? 'Saving...' : 'Save Note'),
                       ),
@@ -964,7 +1213,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                   else if (notes.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Text('No notes yet.', style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65))),
+                      child: Text(
+                        'No notes yet.',
+                        style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65)),
+                      ),
                     )
                   else
                     ListView.separated(
@@ -1047,18 +1299,52 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                         separatorBuilder: (_, __) => const SizedBox(height: 10),
                         itemBuilder: (_, i) {
                           final e = ecgs[i];
+
+                          // Keep id for internal use only (dialog/data), not for user label
                           final id = e['id']?.toString() ?? '';
-                          final created = e['uploaded_at']?.toString() ?? '';
+
+                          // Uploaded time formatted (your existing formatter)
+                          final created = _fmtDate((e['uploaded_at'] ?? '').toString());
+
+                          // ✅ Title shown to user = date/time (or fallback)
+                          final titleLabel = created.isEmpty ? 'ECG' : 'ECG • $created';
+
                           final fileUrl = e['url']?.toString() ?? '';
 
-                          final predTopk = (e['prediction_topk'] is List) ? (e['prediction_topk'] as List) : null;
+                          // Upload type label
+                          final sourceType = (e['source_type'] ?? '').toString();
+                          String typeLabel;
+                          switch (sourceType) {
+                            case 'xml':
+                              typeLabel = 'XML';
+                              break;
+                            case 'aecg':
+                              typeLabel = 'aECG';
+                              break;
+                            case 'image_3x4+1':
+                              typeLabel = 'Image (3×4 + 1)';
+                              break;
+                            case 'image_3x4':
+                              typeLabel = 'Image (3×4)';
+                              break;
+                            default:
+                              typeLabel = sourceType.isEmpty ? '' : sourceType;
+                          }
+
+                          // ✅ Determine if this is a SIGNAL upload (not an image)
+                          final isSignal = sourceType == 'xml' || sourceType == 'aecg';
+
+                          final predTopk =
+                          (e['prediction_topk'] is List) ? (e['prediction_topk'] as List) : null;
 
                           String? predSummary;
 
                           if (predTopk != null && predTopk.isNotEmpty) {
-                            // If CSV ready, show top diagnostic class summary
                             if (_scpReady) {
-                              final topk = predTopk.whereType<Map>().map((m) => m.cast<String, dynamic>()).toList();
+                              final topk = predTopk
+                                  .whereType<Map>()
+                                  .map((m) => m.cast<String, dynamic>())
+                                  .toList();
 
                               final scores = _aggregateDiag5(topk);
                               final best = _bestDiagScore(scores);
@@ -1067,39 +1353,86 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                               predSummary =
                               '${best.label} • $percent%${best.bestCode == null ? '' : ' (from ${best.bestCode})'}';
                             } else {
-                              // fallback: raw top label
                               final first = predTopk.first;
                               if (first is Map && first['label'] != null) {
-                                final p = (first['p'] is num) ? ((first['p'] as num).toDouble() * 100) : null;
-                                predSummary = '${first['label']}${p == null ? '' : ' • ${p.toStringAsFixed(2)}%'}';
+                                final p = (first['p'] is num)
+                                    ? ((first['p'] as num).toDouble() * 100)
+                                    : null;
+                                predSummary =
+                                '${first['label']}${p == null ? '' : ' • ${p.toStringAsFixed(2)}%'}';
                               }
                             }
                           }
 
                           return Card(
                             child: ListTile(
-                              title: Text('ECG #$id'),
+                              // ✅ show date label instead of DB id
+                              title: Text(
+                                titleLabel,
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(created.isEmpty ? 'Uploaded' : created),
+                                  // Type line
+                                  if (typeLabel.isNotEmpty) ...[
+                                    Text(
+                                      'Type: $typeLabel',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: cs.onSurface.withValues(alpha: 0.75),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                  ],
+
                                   if (predSummary != null) ...[
                                     const SizedBox(height: 4),
                                     Text(
                                       'Prediction: $predSummary',
-                                      style: TextStyle(color: cs.primary, fontWeight: FontWeight.w700),
+                                      style: TextStyle(
+                                        color: cs.primary,
+                                        fontWeight: FontWeight.w700,
+                                      ),
                                     ),
                                   ],
                                 ],
                               ),
-                              trailing: const Icon(Icons.open_in_new),
+                              trailing: PopupMenuButton<String>(
+                                onSelected: (v) async {
+                                  if (v == 'open') {
+                                    await _openEcg(e);
+                                  } else if (v == 'delete') {
+                                    await _deleteEcg(e);
+                                  }
+                                },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(value: 'open', child: Text('Open')),
+                                  PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                ],
+                                child: const Icon(Icons.more_vert),
+                              ),
                               onTap: () async {
                                 if (e['prediction_topk'] is List) {
                                   final data = <String, dynamic>{
                                     "topk": e['prediction_topk'],
+
+                                    // ✅ For XML/aECG: preview_image_url is the important PNG
+                                    // ✅ For Images: preview_image_url may be digitized/cropped, keep it
                                     "preview_image_url": e['preview_image_url'],
+
+                                    // ✅ IMPORTANT FIX:
+                                    // For XML/aECG the "url" points to the XML/aECG file (not an image),
+                                    // so DO NOT pass it as original_image_url.
+                                    "original_image_url": isSignal ? null : e['url'],
+
+                                    "source_type": e['source_type'],
                                   };
-                                  await _showPredictionDialogFromJson(title: 'ECG #$id Result', data: data);
+
+                                  await _showPredictionDialogFromJson(
+                                    title: '$titleLabel Result',
+                                    data: data,
+                                  );
                                   return;
                                 }
 
@@ -1107,10 +1440,13 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                                 showDialog(
                                   context: context,
                                   builder: (_) => AlertDialog(
-                                    title: const Text('ECG URL'),
+                                    title: Text(titleLabel),
                                     content: SelectableText(fileUrl),
                                     actions: [
-                                      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context),
+                                        child: const Text('Close'),
+                                      ),
                                     ],
                                   ),
                                 );
