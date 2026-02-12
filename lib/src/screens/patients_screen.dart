@@ -14,6 +14,11 @@ class _PatientsScreenState extends State<PatientsScreen> {
   final nameCtrl = TextEditingController();
   final idCtrl = TextEditingController();
   final ageCtrl = TextEditingController();
+
+  // ✅ SEARCH CONTROLLER
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchQuery = "";
+
   Gender? gender;
 
   bool creating = false;
@@ -32,7 +37,20 @@ class _PatientsScreenState extends State<PatientsScreen> {
     nameCtrl.dispose();
     idCtrl.dispose();
     ageCtrl.dispose();
+    _searchCtrl.dispose(); // ✅ dispose search
     super.dispose();
+  }
+
+  // ✅ FILTERED LIST
+  List<Map<String, dynamic>> get filteredPatients {
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isEmpty) return patients;
+
+    return patients.where((p) {
+      final name = (p['full_name'] ?? '').toString().toLowerCase();
+      final id = (p['patient_id'] ?? '').toString().toLowerCase();
+      return name.contains(q) || id.contains(q);
+    }).toList();
   }
 
   void _snack(String msg) {
@@ -192,6 +210,7 @@ class _PatientsScreenState extends State<PatientsScreen> {
           ),
           const SizedBox(height: 16),
 
+          // CREATE PATIENT CARD (unchanged)
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
             child: Padding(
@@ -237,11 +256,9 @@ class _PatientsScreenState extends State<PatientsScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-
                   Wrap(
                     spacing: 12,
                     runSpacing: 10,
-                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text('Gender:',
                           style: TextStyle(color: cs.onSurface.withValues(alpha: 0.75), fontWeight: FontWeight.w700)),
@@ -249,13 +266,11 @@ class _PatientsScreenState extends State<PatientsScreen> {
                         label: const Text('Male'),
                         selected: gender == Gender.male,
                         onSelected: creating ? null : (_) => setState(() => gender = Gender.male),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
                       ),
                       ChoiceChip(
                         label: const Text('Female'),
                         selected: gender == Gender.female,
                         onSelected: creating ? null : (_) => setState(() => gender = Gender.female),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
                       ),
                       FilledButton.icon(
                         onPressed: canCreate ? createPatient : null,
@@ -272,6 +287,7 @@ class _PatientsScreenState extends State<PatientsScreen> {
           ),
 
           const SizedBox(height: 16),
+
           Text(
             'Existing Patients',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -281,29 +297,42 @@ class _PatientsScreenState extends State<PatientsScreen> {
           ),
           const SizedBox(height: 8),
 
+          // ✅ SEARCH BAR
+          TextField(
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() => _searchQuery = v),
+            decoration: InputDecoration(
+              hintText: 'Search by patient name or ID...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchQuery.isEmpty
+                  ? null
+                  : IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () {
+                  _searchCtrl.clear();
+                  setState(() => _searchQuery = "");
+                },
+              ),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
           Expanded(
             child: loading
                 ? const Center(child: CircularProgressIndicator())
-                : loadError != null
+                : filteredPatients.isEmpty
                 ? Center(
-              child: Text(
-                'Failed to load patients.\n$loadError',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: cs.onSurface),
-              ),
-            )
-                : patients.isEmpty
-                ? Center(
-              child: Text('No patients yet. Create one above.', style: TextStyle(color: cs.onSurface)),
+              child: Text('No matching patients found.',
+                  style: TextStyle(color: cs.onSurface)),
             )
                 : ListView.separated(
-              itemCount: patients.length,
-              separatorBuilder: (_, __) => Divider(
-                height: 1,
-                color: cs.outlineVariant.withValues(alpha: 0.55),
-              ),
+              itemCount: filteredPatients.length,
+              separatorBuilder: (_, __) =>
+                  Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.55)),
               itemBuilder: (_, i) {
-                final p = patients[i];
+                final p = filteredPatients[i];
                 final name = (p['full_name'] ?? '').toString().trim();
                 final id = (p['patient_id'] ?? '').toString().trim();
                 final g = p['gender']?.toString();
@@ -330,10 +359,8 @@ class _PatientsScreenState extends State<PatientsScreen> {
                   ),
                   title: Text(displayName,
                       style: TextStyle(color: cs.onSurface, fontWeight: FontWeight.w800)),
-                  subtitle: Text(
-                    parts.join(' • '),
-                    style: TextStyle(color: cs.onSurface.withValues(alpha: 0.70)),
-                  ),
+                  subtitle: Text(parts.join(' • '),
+                      style: TextStyle(color: cs.onSurface.withValues(alpha: 0.70))),
                   trailing: IconButton(
                     tooltip: 'Delete',
                     icon: Icon(Icons.delete_outline, color: cs.error),
