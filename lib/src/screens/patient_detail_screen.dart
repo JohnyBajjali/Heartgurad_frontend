@@ -9,6 +9,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:http/http.dart' as http;
+import '../services/ecg_notes_service.dart';
 
 import '../services/ecg_upload_service.dart';
 import '../services/doctor_notes_service.dart';
@@ -361,6 +362,225 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
         SnackBar(content: Text('❌ Delete failed: $e')),
       );
     }
+  }
+
+  Future<void> _openEcgNotesDialog(Map<String, dynamic> ecg) async {
+    final ecgId = (ecg['id'] as num).toInt();
+    final cs = Theme.of(context).colorScheme;
+
+    final ctrl = TextEditingController();
+    List<Map<String, dynamic>> ecgNotes = [];
+    bool loading = true;
+
+    Future<void> load() async {
+      loading = true;
+      try {
+        ecgNotes = await EcgNotesService.fetchNotes(ecgId);
+      } finally {
+        loading = false;
+      }
+    }
+
+    await load();
+
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSt) {
+            Future<void> reload() async {
+              setSt(() => loading = true);
+              try {
+                ecgNotes = await EcgNotesService.fetchNotes(ecgId);
+              } catch (_) {}
+              setSt(() => loading = false);
+            }
+
+            Future<void> save() async {
+              final text = ctrl.text.trim();
+              if (text.isEmpty) return;
+              try {
+                await EcgNotesService.addNote(ecgId: ecgId, text: text);
+                ctrl.clear();
+                await reload();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('✅ ECG note saved')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('❌ Save failed: $e')),
+                  );
+                }
+              }
+            }
+
+            Future<void> edit(Map<String, dynamic> note) async {
+              final editCtrl = TextEditingController(text: (note['text'] ?? '').toString());
+              final ok = await showDialog<bool>(
+                context: ctx,
+                builder: (dctx) => AlertDialog(
+                  title: const Text('Edit ECG Note'),
+                  content: TextField(
+                    controller: editCtrl,
+                    minLines: 3,
+                    maxLines: 8,
+                    decoration: const InputDecoration(border: OutlineInputBorder()),
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Cancel')),
+                    ElevatedButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('Save')),
+                  ],
+                ),
+              );
+              if (ok != true) return;
+
+              final newText = editCtrl.text.trim();
+              if (newText.isEmpty) return;
+
+              // ✅ FIX: get note id from the note object
+              final noteId = (note['id'] as num).toInt();
+
+              try {
+                await EcgNotesService.updateNote(
+                  noteId: noteId,
+                  text: newText,
+                );
+                await reload();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('✅ ECG note updated')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('❌ Update failed: $e')),
+                  );
+                }
+              }
+            }
+
+            Future<void> del(Map<String, dynamic> note) async {
+              final ok = await showDialog<bool>(
+                context: ctx,
+                builder: (dctx) => AlertDialog(
+                  title: const Text('Delete ECG Note?'),
+                  content: const Text('This will permanently delete the ECG note.'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Cancel')),
+                    ElevatedButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('Delete')),
+                  ],
+                ),
+              );
+              if (ok != true) return;
+
+              // ✅ FIX: get note id from the note object
+              final noteId = (note['id'] as num).toInt();
+
+              try {
+                await EcgNotesService.deleteNote(noteId: noteId);
+                await reload();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('✅ ECG note deleted')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('❌ Delete failed: $e')),
+                  );
+                }
+              }
+            }
+
+            return AlertDialog(
+              title: Text('ECG Notes (ECG #$ecgId)'),
+              content: SizedBox(
+                width: 560,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: ctrl,
+                      minLines: 2,
+                      maxLines: 5,
+                      decoration: const InputDecoration(
+                        hintText: 'Write a note for this ECG...',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: save,
+                          icon: const Icon(Icons.save),
+                          label: const Text('Save'),
+                        ),
+                        const SizedBox(width: 10),
+                        OutlinedButton.icon(
+                          onPressed: reload,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Refresh'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (loading)
+                      const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: CircularProgressIndicator(),
+                      )
+                    else if (ecgNotes.isEmpty)
+                      Text(
+                        'No ECG notes yet.',
+                        style: TextStyle(color: cs.onSurface.withValues(alpha: 0.65)),
+                      )
+                    else
+                      SizedBox(
+                        height: 260,
+                        child: ListView.separated(
+                          itemCount: ecgNotes.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (_, i) {
+                            final n = ecgNotes[i];
+                            final text = (n['text'] ?? '').toString();
+                            final created = _fmtDate((n['created_at'] ?? '').toString());
+                            return Card(
+                              child: ListTile(
+                                title: Text(created.isEmpty ? 'ECG Note' : 'ECG Note • $created'),
+                                subtitle: Text(text),
+                                trailing: PopupMenuButton<String>(
+                                  onSelected: (v) {
+                                    if (v == 'edit') edit(n);
+                                    if (v == 'delete') del(n);
+                                  },
+                                  itemBuilder: (_) => const [
+                                    PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                    PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<Uint8List?> _openManualCrop(Uint8List bytes) async {
@@ -1396,6 +1616,17 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                                       ),
                                     ),
                                   ],
+
+                                  const SizedBox(height: 8),
+
+                                  // ✅ ECG Notes button under prediction
+                                  Align(
+                                  alignment: Alignment.centerLeft, child: TextButton.icon(
+                                    onPressed: () => _openEcgNotesDialog(e),
+                                    icon: const Icon(Icons.note_alt_outlined, size: 18),
+                                    label: const Text('ECG Notes'),
+                                  ),
+                                  ),
                                 ],
                               ),
                               trailing: PopupMenuButton<String>(
