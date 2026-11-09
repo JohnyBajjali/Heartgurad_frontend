@@ -184,7 +184,7 @@ Useful figures for understanding the application include:
 | 8.10–8.11 | ECG preview and prediction scores | 85 |
 | 8.15 | Manual cropping | 89 |
 
-The report and screenshots are not bundled by this README. Public screenshots should use demo/de-identified data and omit identifying names, IDs, and report headers. The report describes the overall project; the source tree and configuration describe the particular checkout.
+The report is available through the link above. Page numbers in the figure table refer to the printed page numbers inside the report.
 
 ## Scope
 
