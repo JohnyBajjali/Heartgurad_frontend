@@ -14,6 +14,8 @@ The Flutter client provides the user-facing workflow: patient records, ECG uploa
 **Department:** Electrical & Computer Engineering  
 **Project report:** February 2026
 
+[View the full HeartGuard project report](https://github.com/JohnyBajjali/Heartguard_backend/blob/main/Heartguard_report.pdf)
+
 HeartGuard is a collaborative project. This repository retains the original frontend Git history and contributor attribution. Johny's contribution focused on the application layer, including Flutter development, Django API integration, patient records, uploads, and presentation of prediction results; this does not imply sole authorship of the team's model work.
 
 ## Related Repositories
